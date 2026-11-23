@@ -2,6 +2,8 @@
 // Go Engine — Complete Rules, Tactical/Shape Analysis, Scoring & SGF Export
 // ============================================================================
 
+import { t } from './i18n.js';
+
 export const EMPTY = 0;
 export const BLACK = 1;
 export const WHITE = 2;
@@ -13,7 +15,7 @@ export function opponent(color) {
 export const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST'; // 'I' is traditionally skipped in Go
 
 export function coordToLabel(x, y, size) {
-  if (x < 0 || y < 0 || x >= size || y >= size) return '虛手';
+  if (x < 0 || y < 0 || x >= size || y >= size) return t('coordPass');
   return `${COL_LETTERS[x]}${size - y}`;
 }
 
@@ -294,13 +296,13 @@ export class GoBoard {
 
   playIdx(moveIdx, color, superkoSet = null) {
     if (moveIdx < 0 || moveIdx >= this.size * this.size) {
-      return { legal: false, reason: '超出棋盤範圍' };
+      return { legal: false, reason: t('errOutOfBounds') };
     }
     if (this.grid[moveIdx] !== EMPTY) {
-      return { legal: false, reason: '此交叉點已有棋子' };
+      return { legal: false, reason: t('errOccupied') };
     }
     if (moveIdx === this.koPoint) {
-      return { legal: false, reason: '打劫不可立即提回——請先在別處尋劫' };
+      return { legal: false, reason: t('errKo') };
     }
 
     const opp = opponent(color);
@@ -346,7 +348,7 @@ export class GoBoard {
       this.hashHi = prevHashHi;
       this.hashLo = prevHashLo;
       this.koPoint = prevKo;
-      return { legal: false, reason: '禁著點（落子無氣，不可自殺）' };
+      return { legal: false, reason: t('errSuicide') };
     }
 
     // Positional Superko check (optional)
@@ -358,7 +360,7 @@ export class GoBoard {
       this.hashHi = prevHashHi;
       this.hashLo = prevHashLo;
       this.koPoint = prevKo;
-      return { legal: false, reason: '違反同形再現規則（全局同形禁著）' };
+      return { legal: false, reason: t('errSuperko') };
     }
 
     // Determine simple Ko point
@@ -870,7 +872,7 @@ export class GoGame {
 
   playMove(x, y) {
     if (this.phase !== 'playing') {
-      return { legal: false, reason: '目前非對弈階段' };
+      return { legal: false, reason: t('errNotPlaying') };
     }
     const boardBefore = this.board.clone();
     const color = this.turn;
@@ -1015,13 +1017,13 @@ export class GoGame {
     return this.moves[clamped - 1].boardAfter;
   }
 
-  exportSGF(playerColor = BLACK, aiLabel = '師範 AI') {
+  exportSGF(playerColor = BLACK, aiLabel = t('coachTitle')) {
     const sgfCoord = (x, y) => {
       if (x < 0 || y < 0) return '';
       return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
     };
-    const pb = playerColor === BLACK ? '玩家' : aiLabel;
-    const pw = playerColor === WHITE ? '玩家' : aiLabel;
+    const pb = playerColor === BLACK ? t('sgfPlayer') : aiLabel;
+    const pw = playerColor === WHITE ? t('sgfPlayer') : aiLabel;
     let resStr = '';
     if (this.finalScore) {
       if (this.finalScore.resigned) {

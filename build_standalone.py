@@ -11,6 +11,7 @@ ROOT = pathlib.Path(__file__).parent
 OUT_FILE = ROOT / "kaya-sensei-go.html"
 
 JS_ORDER = [
+    "js/i18n.js",
     "js/engine.js",
     "js/nn-engine.js",
     "js/ai.js",

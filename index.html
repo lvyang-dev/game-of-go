@@ -16,29 +16,34 @@
           <span class="stone-dot white"></span>
         </div>
         <div class="brand-text">
-          <span class="brand-name">榧木師範</span>
-          <span class="brand-sub">圍棋對弈與 AI 指導</span>
+          <span class="brand-name" data-i18n="brandName">榧木師範</span>
+          <span class="brand-sub" data-i18n="brandSub">圍棋對弈與 AI 指導</span>
         </div>
       </div>
 
-      <nav class="mode-switcher" role="tablist" aria-label="功能切換">
+      <nav class="mode-switcher" role="tablist" aria-label="功能切換" data-i18n-aria="ariaModeSwitch">
         <button id="tab-play" class="mode-tab active" role="tab" aria-selected="true" data-mode="play">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
-          對弈指導
+          <span data-i18n="tabPlay">對弈指導</span>
         </button>
         <button id="tab-dojo" class="mode-tab" role="tab" aria-selected="false" data-mode="dojo">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-          實戰道場
+          <span data-i18n="tabDojo">實戰道場</span>
           <span id="dojo-badge-count" class="pill-count">0/15</span>
         </button>
       </nav>
 
       <div class="topbar-actions">
+        <select id="lang-select" class="lang-select" title="切換介面語言" aria-label="切換介面語言" data-i18n-title="titleLang" data-i18n-aria="titleLang">
+          <option value="zh-TW">繁體中文</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="en">English</option>
+        </select>
         <button id="btn-new-game" class="btn btn-primary">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          新開一局
+          <span data-i18n="btnNewGame">新開一局</span>
         </button>
-        <button id="btn-sound" class="btn btn-icon" title="切換落子音效" aria-label="切換落子音效">
+        <button id="btn-sound" class="btn btn-icon" title="切換落子音效" aria-label="切換落子音效" data-i18n-title="titleSound" data-i18n-aria="titleSound">
           <svg id="icon-sound-on" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
           <svg id="icon-sound-off" class="hidden" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
         </button>
@@ -55,7 +60,7 @@
             <span class="chip-stone black"></span>
             <div class="chip-info">
               <span id="black-name" class="chip-name">您（黑棋）</span>
-              <span class="chip-meta">提子：<strong id="black-captures">0</strong></span>
+              <span class="chip-meta"><span data-i18n="capturesLabel">提子：</span><strong id="black-captures">0</strong></span>
             </div>
           </div>
 
@@ -67,7 +72,7 @@
           <div id="player-white-card" class="player-chip">
             <div class="chip-info right">
               <span id="white-name" class="chip-name">師範 AI（白棋）</span>
-              <span class="chip-meta">提子：<strong id="white-captures">0</strong></span>
+              <span class="chip-meta"><span data-i18n="capturesLabel">提子：</span><strong id="white-captures">0</strong></span>
             </div>
             <span class="chip-stone white"></span>
           </div>
@@ -81,42 +86,53 @@
           </div>
           <div class="dojo-strip-right">
             <span id="dojo-rank-pill" class="rank-pill">14 級</span>
-            <span id="dojo-solved-pill" class="solved-pill hidden">✓ 已通過</span>
+            <span id="dojo-solved-pill" class="solved-pill hidden" data-i18n="dojoSolvedPill">✓ 已通過</span>
           </div>
         </div>
 
         <!-- Goban Frame -->
         <div class="goban-outer">
           <div id="goban-frame" class="goban-frame">
-            <canvas id="goban-canvas" aria-label="圍棋棋盤"></canvas>
+            <canvas id="goban-canvas" aria-label="圍棋棋盤" data-i18n-aria="ariaGoban"></canvas>
             <div id="board-toast" class="board-toast hidden" role="status"></div>
+            <!-- Retry Original Move Comparison Banner -->
+            <div id="retry-compare-banner" class="retry-compare-banner hidden">
+              <div class="retry-banner-info">
+                <span class="retry-banner-tag" data-i18n="retryBannerTag">重練對照模式</span>
+                <span id="retry-banner-text" class="retry-banner-text">已退回第 15 手（原落子於 G5，已於盤上標記）</span>
+              </div>
+              <div class="retry-banner-actions">
+                <button id="btn-show-hints-retry" class="btn btn-sm btn-accent" data-i18n="btnShowHintsRetry">查看推薦選點</button>
+                <button id="btn-restore-original-move" class="btn btn-sm btn-subtle" title="結束重練並還原至原始棋譜" data-i18n="btnRestoreOriginal" data-i18n-title="titleRestoreOriginal">還原原譜</button>
+              </div>
+            </div>
           </div>
         </div>
 
         <!-- Play Mode Bottom Controls -->
         <div id="play-toolbar" class="board-toolbar">
           <div class="toolbar-group">
-            <button id="btn-undo" class="btn btn-subtle" title="悔棋（⌘Z）">
+            <button id="btn-undo" class="btn btn-subtle" title="悔棋（⌘Z）" data-i18n-title="titleUndo">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
-              悔棋
+              <span data-i18n="btnUndo">悔棋</span>
             </button>
-            <button id="btn-pass" class="btn btn-subtle" title="虛手（停一手）">虛手</button>
-            <button id="btn-resign" class="btn btn-subtle btn-danger-ghost" title="認輸結束本局">認輸</button>
+            <button id="btn-pass" class="btn btn-subtle" title="虛手（停一手）" data-i18n="btnPass" data-i18n-title="titlePass">虛手</button>
+            <button id="btn-resign" class="btn btn-subtle btn-danger-ghost" title="認輸結束本局" data-i18n="btnResign" data-i18n-title="titleResign">認輸</button>
           </div>
 
           <div id="review-nav" class="toolbar-group review-nav">
-            <button id="btn-nav-start" class="btn btn-icon-sm" title="回到開局">|&lsaquo;</button>
-            <button id="btn-nav-prev" class="btn btn-icon-sm" title="上一手">&lsaquo;</button>
+            <button id="btn-nav-start" class="btn btn-icon-sm" title="回到開局" data-i18n-title="titleNavStart">|&lsaquo;</button>
+            <button id="btn-nav-prev" class="btn btn-icon-sm" title="上一手" data-i18n-title="titleNavPrev">&lsaquo;</button>
             <span id="move-counter" class="move-counter">開局</span>
-            <button id="btn-nav-next" class="btn btn-icon-sm" title="下一手">&rsaquo;</button>
-            <button id="btn-nav-end" class="btn btn-icon-sm" title="回到最新一手">&rsaquo;|</button>
+            <button id="btn-nav-next" class="btn btn-icon-sm" title="下一手" data-i18n-title="titleNavNext">&rsaquo;</button>
+            <button id="btn-nav-end" class="btn btn-icon-sm" title="回到最新一手" data-i18n-title="titleNavEnd">&rsaquo;|</button>
           </div>
 
           <div class="toolbar-group">
-            <button id="btn-toggle-territory" class="btn btn-toggle" title="顯示地盤與厚薄形勢">形勢</button>
-            <button id="btn-toggle-atari" class="btn btn-toggle active" title="標記被叫吃的棋串">叫吃</button>
-            <button id="btn-toggle-numbers" class="btn btn-toggle" title="顯示落子手數">手數</button>
-            <button id="btn-export-sgf" class="btn btn-subtle" title="下載 SGF 棋譜">棋譜</button>
+            <button id="btn-toggle-territory" class="btn btn-toggle" title="顯示地盤與厚薄形勢" data-i18n="btnTerritory" data-i18n-title="titleTerritory">形勢</button>
+            <button id="btn-toggle-atari" class="btn btn-toggle active" title="標記被叫吃的棋串" data-i18n="btnAtari" data-i18n-title="titleAtari">叫吃</button>
+            <button id="btn-toggle-numbers" class="btn btn-toggle" title="顯示落子手數" data-i18n="btnNumbers" data-i18n-title="titleNumbers">手數</button>
+            <button id="btn-export-sgf" class="btn btn-subtle" title="下載 SGF 棋譜" data-i18n="btnExportSgf" data-i18n-title="titleExportSgf">棋譜</button>
           </div>
         </div>
 
@@ -125,7 +141,7 @@
           <div class="toolbar-group">
             <button id="btn-dojo-reset" class="btn btn-subtle">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
-              重設題目
+              <span data-i18n="btnDojoReset">重設題目</span>
             </button>
             <button id="btn-dojo-hint" class="btn btn-accent">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
@@ -134,8 +150,8 @@
           </div>
 
           <div class="toolbar-group">
-            <button id="btn-dojo-prev" class="btn btn-subtle">&larr; 上一題</button>
-            <button id="btn-dojo-next" class="btn btn-primary">下一題 &rarr;</button>
+            <button id="btn-dojo-prev" class="btn btn-subtle" data-i18n="btnDojoPrev">&larr; 上一題</button>
+            <button id="btn-dojo-next" class="btn btn-primary" data-i18n="btnDojoNext">下一題 &rarr;</button>
           </div>
         </div>
       </section>
@@ -147,10 +163,10 @@
           <!-- Scoring / Game Over Panel (visible when scoring or finished) -->
           <div id="scoring-card" class="card scoring-card hidden">
             <div class="card-header">
-              <h3 id="scoring-title">點目與死子確認</h3>
+              <h3 id="scoring-title" data-i18n="scoringTitle">點目與死子確認</h3>
               <div class="rules-toggle">
-                <button id="rule-chinese" class="mini-pill active" data-rule="chinese">數子法</button>
-                <button id="rule-japanese" class="mini-pill" data-rule="japanese">數目法</button>
+                <button id="rule-chinese" class="mini-pill active" data-rule="chinese" data-i18n="ruleChinese">數子法</button>
+                <button id="rule-japanese" class="mini-pill" data-rule="japanese" data-i18n="ruleJapanese">數目法</button>
               </div>
             </div>
             <p id="scoring-instructions" class="muted-text">
@@ -158,12 +174,34 @@
             </p>
             <div id="score-breakdown" class="score-breakdown"></div>
             <div id="scoring-actions" class="card-actions">
-              <button id="btn-accept-score" class="btn btn-primary flex-1">確認勝負</button>
-              <button id="btn-resume-play" class="btn btn-subtle">繼續對弈</button>
+              <button id="btn-accept-score" class="btn btn-primary flex-1" data-i18n="btnAcceptScore">確認勝負</button>
+              <button id="btn-resume-play" class="btn btn-subtle" data-i18n="btnResumePlay">繼續對弈</button>
             </div>
             <div id="postgame-review" class="postgame-review hidden">
-              <div class="review-subheading">本局關鍵檢討</div>
+              <div class="review-subheading" data-i18n="postgameSubheading">本局關鍵問題手檢討</div>
               <div id="key-moments-list" class="key-moments-list"></div>
+            </div>
+          </div>
+
+          <!-- Problem Review Navigation Bar (active during problem-by-problem review mode) -->
+          <div id="problem-review-card" class="card problem-review-card hidden">
+            <div class="card-header">
+              <div class="coach-title-wrap">
+                <span class="review-badge-icon" aria-hidden="true" data-i18n="problemReviewIcon">檢</span>
+                <div>
+                  <h3 id="problem-review-title" data-i18n="problemReviewTitle">問題手專題檢討</h3>
+                  <span id="problem-review-subtitle" class="card-subtitle">第 1 / 3 處問題手</span>
+                </div>
+              </div>
+              <button id="btn-exit-problem-review" class="btn btn-icon-sm" title="退出問題手檢討" data-i18n-title="titleExitProblemReview">&times;</button>
+            </div>
+            <div class="problem-review-body">
+              <div id="problem-review-info" class="problem-review-info"></div>
+              <div class="problem-review-nav-bar">
+                <button id="btn-prev-problem" class="btn btn-subtle btn-sm" data-i18n="btnPrevProblem">&larr; 上一處</button>
+                <button id="btn-practice-current-problem" class="btn btn-accent btn-sm" data-i18n="btnPracticeCurrent">從此手重練</button>
+                <button id="btn-next-problem" class="btn btn-subtle btn-sm" data-i18n="btnNextProblem">下一處 &rarr;</button>
+              </div>
             </div>
           </div>
 
@@ -171,13 +209,13 @@
           <div class="card coach-card">
             <div class="card-header">
               <div class="coach-title-wrap">
-                <span class="coach-avatar" aria-hidden="true">師</span>
+                <span class="coach-avatar" aria-hidden="true" data-i18n="coachAvatar">師</span>
                 <div>
-                  <h3>AI 指導教練</h3>
-                  <span class="card-subtitle">即時著手評級與選點分析</span>
+                  <h3 data-i18n="coachTitle">AI 指導教練</h3>
+                  <span class="card-subtitle" data-i18n="coachSubtitle">即時著手評級與選點分析</span>
                 </div>
               </div>
-              <label class="switch" title="切換即時 AI 指導模式">
+              <label class="switch" title="切換即時 AI 指導模式" data-i18n-title="titleToggleCoach">
                 <input type="checkbox" id="toggle-coach" checked />
                 <span class="slider"></span>
               </label>
@@ -198,9 +236,9 @@
               <div class="coach-actions">
                 <button id="btn-ask-hint" class="btn btn-accent flex-1">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                  顯示推薦選點（前三手）
+                  <span id="btn-ask-hint-label" data-i18n="btnAskHint">顯示推薦選點（前三手）</span>
                 </button>
-                <button id="btn-retry-move" class="btn btn-subtle hidden">
+                <button id="btn-retry-move" class="btn btn-subtle hidden" data-i18n="btnRetryMove">
                   ↺ 重下這手
                 </button>
               </div>
@@ -208,7 +246,7 @@
               <div id="coach-candidates" class="candidates-list hidden"></div>
             </div>
 
-            <div id="coach-paused-msg" class="muted-text hidden">
+            <div id="coach-paused-msg" class="muted-text hidden" data-i18n="coachPausedMsg">
               即時指導目前已暫停，進入純粹對弈模式。隨時可重新開啟以獲得著手評析與選點提示。
             </div>
           </div>
@@ -216,14 +254,14 @@
           <!-- Winrate & Game Momentum Card -->
           <div class="card winrate-card">
             <div class="card-header">
-              <h3>勝率與形勢判斷</h3>
+              <h3 data-i18n="winrateTitle">勝率與形勢判斷</h3>
               <span id="score-lead-badge" class="lead-badge">勢均力敵</span>
             </div>
 
             <div class="winrate-bar-wrap">
               <div class="winrate-labels">
-                <span>黑棋 <strong id="wr-black-pct">50%</strong></span>
-                <span><strong id="wr-white-pct">50%</strong> 白棋</span>
+                <span><span data-i18n="wrBlackLabel">黑棋 </span><strong id="wr-black-pct">50%</strong></span>
+                <span><strong id="wr-white-pct">50%</strong><span data-i18n="wrWhiteLabel"> 白棋</span></span>
               </div>
               <div class="winrate-bar">
                 <div id="wr-black-fill" class="wr-black-fill" style="width: 50%"></div>
@@ -231,8 +269,8 @@
             </div>
 
             <div class="graph-container">
-              <svg id="winrate-graph" viewBox="0 0 340 88" preserveAspectRatio="none" aria-label="勝率走勢圖"></svg>
-              <div class="graph-hint">點擊曲線上任意位置即可回顧該手局面</div>
+              <svg id="winrate-graph" viewBox="0 0 340 88" preserveAspectRatio="none" aria-label="勝率走勢圖" data-i18n-aria="ariaWinrateGraph"></svg>
+              <div class="graph-hint" data-i18n="graphHint">點擊曲線上任意位置即可回顧該手局面</div>
             </div>
           </div>
 
@@ -240,20 +278,20 @@
           <div class="card nn-card">
             <div class="card-header">
               <div>
-                <h3>神經網路 AI 引擎</h3>
-                <span class="card-subtitle">瀏覽器端 ONNX（WebGPU / WASM）</span>
+                <h3 data-i18n="nnTitle">神經網路 AI 引擎</h3>
+                <span class="card-subtitle" data-i18n="nnSubtitle">瀏覽器端 ONNX（WebGPU / WASM）</span>
               </div>
-              <span id="nn-status-badge" class="nn-badge idle">內建引擎</span>
+              <span id="nn-status-badge" class="nn-badge idle" data-i18n="nnBadgeIdle">內建引擎</span>
             </div>
 
             <div id="nn-controls" class="nn-controls">
-              <select id="nn-preset-select" class="select-input nn-select" aria-label="選擇 ONNX 模型來源">
-                <option value="repo-local">專案內建模型（./models/katago.onnx）</option>
-                <option value="hf-kaya-fp16">KataGo b28c512 FP16（Hugging Face）</option>
-                <option value="custom">自訂 HTTPS 模型網址…</option>
+              <select id="nn-preset-select" class="select-input nn-select" aria-label="選擇 ONNX 模型來源" data-i18n-aria="ariaNnSelect">
+                <option value="repo-local" data-i18n="nnOptRepo">專案內建模型（./models/katago.onnx）</option>
+                <option value="hf-kaya-fp16" data-i18n="nnOptHf">KataGo b28c512 FP16（Hugging Face）</option>
+                <option value="custom" data-i18n="nnOptCustom">自訂 HTTPS 模型網址…</option>
               </select>
 
-              <input id="nn-custom-url" class="text-input hidden" type="url" placeholder="貼上 .onnx 模型網址（https://…）" />
+              <input id="nn-custom-url" class="text-input hidden" type="url" placeholder="貼上 .onnx 模型網址（https://…）" data-i18n-placeholder="nnCustomPlaceholder" />
 
               <div id="nn-progress-wrap" class="nn-progress-wrap hidden">
                 <div class="nn-progress-meta">
@@ -268,13 +306,13 @@
               <div id="nn-error-msg" class="nn-error hidden"></div>
 
               <div class="nn-actions">
-                <button id="btn-nn-load" class="btn btn-accent flex-1">載入神經網路</button>
-                <button id="btn-nn-file" class="btn btn-subtle" title="從本機選擇 .onnx 檔案">本機 .onnx</button>
-                <button id="btn-nn-unload" class="btn btn-subtle hidden">切換回內建</button>
+                <button id="btn-nn-load" class="btn btn-accent flex-1" data-i18n="nnBtnLoad">載入神經網路</button>
+                <button id="btn-nn-file" class="btn btn-subtle" title="從本機選擇 .onnx 檔案" data-i18n="nnBtnFile" data-i18n-title="nnTitleFile">本機 .onnx</button>
+                <button id="btn-nn-unload" class="btn btn-subtle hidden" data-i18n="nnBtnUnload">切換回內建</button>
                 <input id="input-nn-file" type="file" accept=".onnx" class="hidden" />
               </div>
 
-              <div id="nn-active-info" class="muted-text nn-note">
+              <div id="nn-active-info" class="muted-text nn-note" data-i18n="nnNoteDefault">
                 初次載入後自動快取於瀏覽器，支援 GitHub Pages 零伺服器部署。
               </div>
             </div>
@@ -286,7 +324,7 @@
           <!-- Active Practice Briefing & Feedback -->
           <div class="card dojo-active-card">
             <div class="card-header">
-              <h3>師範專題練習</h3>
+              <h3 data-i18n="dojoTitle">師範專題練習</h3>
               <span id="dojo-step-indicator" class="meta-subtle">黑先</span>
             </div>
 
@@ -299,17 +337,17 @@
               <div id="dojo-feedback-title" class="feedback-title">輪到您落子</div>
               <p id="dojo-feedback-body" class="feedback-body">請先在腦中計算變化，再於棋盤上落子。</p>
               <div id="dojo-feedback-actions" class="feedback-actions hidden">
-                <button id="btn-dojo-try-again" class="btn btn-subtle">↺ 再試一次</button>
+                <button id="btn-dojo-try-again" class="btn btn-subtle" data-i18n="btnDojoTryAgain">↺ 再試一次</button>
               </div>
             </div>
 
             <div id="dojo-hint-box" class="dojo-hint-box hidden">
-              <div class="hint-tag">教練提示</div>
+              <div class="hint-tag" data-i18n="dojoHintTag">教練提示</div>
               <p id="dojo-hint-text"></p>
             </div>
 
             <div id="dojo-takeaway-box" class="dojo-takeaway hidden">
-              <div class="takeaway-tag">圍棋心法格言</div>
+              <div class="takeaway-tag" data-i18n="dojoTakeawayTag">圍棋心法格言</div>
               <p id="dojo-takeaway-text"></p>
             </div>
           </div>
@@ -317,7 +355,7 @@
           <!-- Curriculum Browser -->
           <div class="card dojo-library-card">
             <div class="card-header">
-              <h3>練習課程表</h3>
+              <h3 data-i18n="dojoCurriculumTitle">練習課程表</h3>
               <span id="dojo-mastery-text" class="meta-subtle">已精通 0 / 15 題</span>
             </div>
             <div class="mastery-bar">
@@ -336,79 +374,79 @@
   <div id="modal-new-game" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-new-title">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h2 id="modal-new-title">開局設定</h2>
-        <button id="btn-close-modal" class="btn btn-icon-sm" aria-label="關閉">&times;</button>
+        <h2 id="modal-new-title" data-i18n="modalTitle">開局設定</h2>
+        <button id="btn-close-modal" class="btn btn-icon-sm" aria-label="關閉" data-i18n-aria="ariaClose">&times;</button>
       </div>
 
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">棋盤路數</label>
+          <label class="form-label" data-i18n="labelBoardSize">棋盤路數</label>
           <div class="segmented-grid cols-3" data-setting="size">
             <button class="seg-btn active" data-value="9">
-              <strong>9 路</strong>
-              <span>快棋 · 局部戰鬥</span>
+              <strong data-i18n="size9Title">9 路</strong>
+              <span data-i18n="size9Sub">快棋 · 局部戰鬥</span>
             </button>
             <button class="seg-btn" data-value="13">
-              <strong>13 路</strong>
-              <span>進階 · 攻防平衡</span>
+              <strong data-i18n="size13Title">13 路</strong>
+              <span data-i18n="size13Sub">進階 · 攻防平衡</span>
             </button>
             <button class="seg-btn" data-value="19">
-              <strong>19 路</strong>
-              <span>標準完整棋盤</span>
+              <strong data-i18n="size19Title">19 路</strong>
+              <span data-i18n="size19Sub">標準完整棋盤</span>
             </button>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label">AI 對手棋力</label>
+          <label class="form-label" data-i18n="labelAiStrength">AI 對手棋力</label>
           <div class="segmented-grid cols-2" data-setting="difficulty">
             <button class="seg-btn" data-value="relaxed">
-              <strong>15 級</strong>
-              <span>輕鬆練手</span>
+              <strong data-i18n="diff15kTitle">15 級</strong>
+              <span data-i18n="diff15kSub">輕鬆練手</span>
             </button>
             <button class="seg-btn active" data-value="club">
-              <strong>10 級</strong>
-              <span>棋社水準</span>
+              <strong data-i18n="diff10kTitle">10 級</strong>
+              <span data-i18n="diff10kSub">棋社水準</span>
             </button>
             <button class="seg-btn" data-value="strong">
-              <strong>5 級</strong>
-              <span>進階強手</span>
+              <strong data-i18n="diff5kTitle">5 級</strong>
+              <span data-i18n="diff5kSub">進階強手</span>
             </button>
             <button class="seg-btn" data-value="dan">
-              <strong>段位 NN</strong>
-              <span>神經網路強化</span>
+              <strong data-i18n="diffDanTitle">段位 NN</strong>
+              <span data-i18n="diffDanSub">神經網路強化</span>
             </button>
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group flex-1">
-            <label class="form-label">您的執色</label>
+            <label class="form-label" data-i18n="labelYourColor">您的執色</label>
             <div class="segmented-grid cols-2" data-setting="color">
               <button class="seg-btn active" data-value="1">
-                <span class="inline-stone black"></span> 執黑
+                <span class="inline-stone black"></span> <span data-i18n="colorBlack">執黑</span>
               </button>
               <button class="seg-btn" data-value="2">
-                <span class="inline-stone white"></span> 執白
+                <span class="inline-stone white"></span> <span data-i18n="colorWhite">執白</span>
               </button>
             </div>
           </div>
 
           <div class="form-group flex-1">
-            <label class="form-label">讓子設定（黑讓子）</label>
+            <label class="form-label" data-i18n="labelHandicap">讓子設定（黑讓子）</label>
             <select id="select-handicap" class="select-input">
-              <option value="0">分先（貼 6.5 目）</option>
-              <option value="2">讓 2 子（貼 0.5 目）</option>
-              <option value="3">讓 3 子（貼 0.5 目）</option>
-              <option value="4">讓 4 子（貼 0.5 目）</option>
+              <option value="0" data-i18n="handicap0">分先（貼 6.5 目）</option>
+              <option value="2" data-i18n="handicap2">讓 2 子（貼 0.5 目）</option>
+              <option value="3" data-i18n="handicap3">讓 3 子（貼 0.5 目）</option>
+              <option value="4" data-i18n="handicap4">讓 4 子（貼 0.5 目）</option>
             </select>
           </div>
         </div>
 
         <div class="form-group coach-opt-row">
           <div>
-            <div class="form-label" style="margin-bottom:2px">即時 AI 指導模式</div>
-            <div class="muted-text" style="font-size:12px">即時評析每一手的效率與棋形，並在失誤時提供重試機會。</div>
+            <div class="form-label" style="margin-bottom:2px" data-i18n="labelLiveCoach">即時 AI 指導模式</div>
+            <div class="muted-text" style="font-size:12px" data-i18n="descLiveCoach">即時評析每一手的效率與棋形，並在失誤時提供重試機會。</div>
           </div>
           <label class="switch">
             <input type="checkbox" id="modal-coach-toggle" checked />
@@ -418,8 +456,8 @@
       </div>
 
       <div class="modal-footer">
-        <button id="btn-cancel-modal" class="btn btn-subtle">取消</button>
-        <button id="btn-start-game" class="btn btn-primary">開始對弈</button>
+        <button id="btn-cancel-modal" class="btn btn-subtle" data-i18n="btnCancel">取消</button>
+        <button id="btn-start-game" class="btn btn-primary" data-i18n="btnStartGame">開始對弈</button>
       </div>
     </div>
   </div>

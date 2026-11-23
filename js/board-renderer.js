@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { EMPTY, BLACK, WHITE, COL_LETTERS, getHoshiPoints } from './engine.js';
+import { t } from './i18n.js';
 
 export class GobanRenderer {
   constructor(canvas) {
@@ -137,6 +138,7 @@ export class GobanRenderer {
       dojoHintRegion = null,
       dojoHintExact = null,
       scoringMode = false,
+      originalMoveMarker = null,
     } = state;
 
     const size = board.size;
@@ -465,6 +467,80 @@ export class GobanRenderer {
         ctx.beginPath();
         ctx.arc(px, py, stoneR * 0.22, 0, Math.PI * 2);
         ctx.fill();
+      }
+    }
+
+    // 12b. Original Move Marker during Retry / Review Comparison
+    if (originalMoveMarker && !scoringMode) {
+      const { x, y, label, moveNum } = originalMoveMarker;
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) {
+        const { px, py } = toPx(x, y);
+        const r = stoneR * 0.88;
+        const textStr = label || (moveNum ? t('origMoveTag', { moveNum }) : t('origMoveDefault'));
+
+        ctx.save();
+        // Red / Coral dashed highlight ring
+        ctx.shadowColor = 'rgba(239, 68, 68, 0.6)';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = Math.max(2.4, cell * 0.075);
+        ctx.setLineDash([5, 3.5]);
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // X mark across the circle to clearly show this was the replaced move
+        ctx.save();
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.lineWidth = Math.max(2, cell * 0.06);
+        const crossR = stoneR * 0.38;
+        ctx.beginPath();
+        ctx.moveTo(px - crossR, py - crossR);
+        ctx.lineTo(px + crossR, py + crossR);
+        ctx.moveTo(px + crossR, py - crossR);
+        ctx.lineTo(px - crossR, py + crossR);
+        ctx.stroke();
+        ctx.restore();
+
+        // Distinct pill tag badge above the stone coordinate
+        ctx.save();
+        ctx.fillStyle = '#dc2626';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+        const fontSize = Math.max(9.5, cell * 0.26);
+        ctx.font = `700 ${fontSize}px "PingFang TC", "Noto Sans TC", "Heiti TC", "Microsoft JhengHei", -apple-system, sans-serif`;
+        const textMetrics = ctx.measureText(textStr);
+        const padX = 6;
+        const tagW = Math.max(textMetrics.width + padX * 2, cell * 0.85);
+        const tagH = Math.max(16, cell * 0.42);
+        const tagR = 4;
+        const tx = px - tagW / 2;
+        const ty = py - r - tagH * 0.82; // Place badge slightly above the stone intersection
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(tx, ty, tagW, tagH, tagR);
+        } else {
+          ctx.rect(tx, ty, tagW, tagH);
+        }
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `700 ${fontSize}px "PingFang TC", "Noto Sans TC", "Heiti TC", "Microsoft JhengHei", -apple-system, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(textStr, px, ty + tagH / 2 + 0.5);
+        ctx.restore();
       }
     }
 

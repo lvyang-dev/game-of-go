@@ -12,6 +12,7 @@ import {
   detectMoveFeatures,
 } from './engine.js';
 import { neuralEngine } from './nn-engine.js';
+import { t } from './i18n.js';
 
 export const DIFFICULTY_PRESETS = {
   relaxed: {
@@ -185,7 +186,7 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
     // 1. Tactical Capture (huge priority)
     if (capturesHere > 0) {
       score += 55 + capturesHere * 22;
-      tags.push(`提吃對方 ${capturesHere} 子`);
+      tags.push(t('tagCapture', { n: capturesHere }));
     }
 
     // 2. Saving a friendly group in Atari
@@ -198,7 +199,7 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
         const libsAfter = sim.countLibertiesUpTo(idx, 3);
         if (libsAfter >= 2) {
           score += 48 + savesHere * 20;
-          tags.push(`救出被叫吃的 ${savesHere} 子`);
+          tags.push(t('tagSaveAtari', { n: savesHere }));
         } else {
           // Extending into a dead ladder / still 1 liberty — penalize!
           score -= 18;
@@ -210,7 +211,7 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
     const oppTwo = oppTwoLibBonus.get(idx) || 0;
     if (oppTwo > 0) {
       score += 18 + Math.min(20, oppTwo * 5);
-      tags.push('叫吃對方棋串');
+      tags.push(t('tagAtari'));
     }
 
     // 4. Extending a friendly 2-liberty group
@@ -255,7 +256,7 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
             score += 4;
           } else {
             score -= 42;
-            tags.push('自填打吃');
+            tags.push(t('tagSelfAtari'));
           }
         }
       }
@@ -265,7 +266,7 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
     // Hane (diagonal to friendly, touching enemy)
     if (oOrtho >= 1 && fDiag >= 1 && fOrtho === 0) {
       score += 11;
-      tags.push('扳');
+      tags.push(t('tagHane'));
     }
     // Diagonal / Tiger's mouth / Kosumi
     if (fDiag >= 1 && fOrtho === 0 && oOrtho === 0) {
@@ -273,17 +274,17 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
     }
     if (fDiag >= 2 && fOrtho === 0) {
       score += 9;
-      tags.push('虎口');
+      tags.push(t('tagTiger'));
     }
     // Cut / Push through between enemy stones
     if (oOrtho >= 2) {
       score += 10;
-      tags.push('切斷／楔入');
+      tags.push(t('tagCut'));
     }
     // Connect when enemy is adjacent
     if (fOrtho >= 2 && oOrtho >= 1) {
       score += 12;
-      tags.push('厚實連接');
+      tags.push(t('tagConnect'));
     }
     // Empty Triangle penalty (unless capturing or saving)
     if (capturesHere === 0 && savesHere === 0 && fOrtho >= 2 && oOrtho === 0) {
@@ -331,7 +332,7 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
           score += nearbyStones === 0 ? 18 : 8;
           if (dxEdge === 5 && dyEdge === 5 && stoneCount <= 2) score += 6;
           if ((dxEdge === 3 || dxEdge === 4) && (dyEdge === 3 || dyEdge === 4) && nearbyStones === 0) {
-            tags.push('開局大場');
+            tags.push(t('tagOpeningBig'));
           }
         }
         if (line === 1) score -= 24;
@@ -344,21 +345,21 @@ export function getCandidateMoves(board, color, lastMoveIdx = -1, superkoSet = n
         const isSanSan = dxEdge === 3 && dyEdge === 3;
         if (isGoldenCorner && nearbyStones === 0) {
           score += 28;
-          tags.push('佔據空角');
+          tags.push(t('tagEmptyCorner'));
         } else if (isSanSan && nearbyStones === 0) {
           score += 18;
-          tags.push('實地佔角');
+          tags.push(t('tagCornerTerritory'));
         } else if (isGoldenCorner && nearbyStones === 1) {
           score += 14;
         }
         // Approach (Kakari) or Enclosure (Shimari) near a corner stone
         if ((dxEdge === 3 || dxEdge === 4) && (dyEdge === 5 || dyEdge === 6) && nearbyStones === 1) {
           score += 15;
-          tags.push('掛角／締角');
+          tags.push(t('tagCornerApproach'));
         }
         if ((dyEdge === 3 || dyEdge === 4) && (dxEdge === 5 || dxEdge === 6) && nearbyStones === 1) {
           score += 15;
-          tags.push('掛角／締角');
+          tags.push(t('tagCornerApproach'));
         }
         // 3rd & 4th line sides
         if (line === 3 || line === 4) {
@@ -918,46 +919,46 @@ export async function analyzePositionAsync(board, colorToPlay, {
 function buildMoveReason(board, moveIdx, color, tags = []) {
   const sim = board.clone();
   const res = sim.playIdx(moveIdx, color);
-  if (!res.legal) return '穩健的形勢選點';
+  if (!res.legal) return t('reasonSolid');
   const feat = detectMoveFeatures(board, moveIdx, color, sim, res.captured);
 
   if (feat.capturedCount > 0) {
-    return `提吃對方 ${feat.capturedCount} 子`;
+    return t('reasonCapture', { n: feat.capturedCount });
   }
   if (feat.savedAtariStones > 0) {
-    return `救出被叫吃的 ${feat.savedAtariStones} 子`;
+    return t('reasonSave', { n: feat.savedAtariStones });
   }
   if (feat.putOppInAtari.length > 0) {
-    return '叫吃對方棋串（先手施壓）';
+    return t('reasonAtari');
   }
   if (feat.isCut) {
-    return '切斷分斷對方棋子';
+    return t('reasonCut');
   }
   if (feat.isConnect) {
-    return '厚實連接我方棋串';
+    return t('reasonConnect');
   }
   if (feat.isTigersMouth) {
-    return '虎口好形（掛黏護斷）';
+    return t('reasonTiger');
   }
   if (feat.isHane) {
-    return '積極扳出，壓縮對方並擴張實地';
+    return t('reasonHane');
   }
-  if (tags.includes('佔據空角')) {
-    return '佔據空角（金角銀邊草肚皮）';
+  if (tags.includes(t('tagEmptyCorner'))) {
+    return t('reasonEmptyCorner');
   }
-  if (tags.includes('掛角／締角')) {
-    return '掛角或締角（角部大場）';
+  if (tags.includes(t('tagCornerApproach'))) {
+    return t('reasonCornerApproach');
   }
   if (feat.isCornerPoint && countStonesOnBoard(board) < 16) {
-    return `均衡的角部開局選點（${feat.coord}）`;
+    return t('reasonCornerBalanced', { coord: feat.coord });
   }
   if (feat.line === 3) {
-    return '三路穩健取地';
+    return t('reasonLine3');
   }
   if (feat.line === 4) {
-    return '四路兼顧外勢與中腹發展';
+    return t('reasonLine4');
   }
-  return '擴張外勢並掌握中腹與邊上要點';
+  return t('reasonExpand');
 }
 
 export async function evaluateUserMoveAsync(boardBefore, moveIdx, color, boardAfter, captured, {
@@ -980,16 +981,16 @@ export async function evaluateUserMoveAsync(boardBefore, moveIdx, color, boardAf
     const postEval = evaluateBoardStatic(boardAfter, komi);
     return {
       grade: preAnalysis.passRecommended ? 'great' : 'inaccuracy',
-      gradeLabel: preAnalysis.passRecommended ? '合適虛手' : '虛手過早？',
+      gradeLabel: preAnalysis.passRecommended ? t('gradeGoodPass') : t('gradeEarlyPass'),
       winrateDelta: 0,
       blackWinrateAfter: postEval.blackWinrate,
       scoreLeadBlack: postEval.scoreLeadBlack,
       headline: preAnalysis.passRecommended
-        ? '乾淨俐落的虛手——盤面已無價值官子。'
-        : '盤面上似乎還有可收的官子或空地。',
+        ? t('evalPassGoodHead')
+        : t('evalPassEarlyHead'),
       explanation: preAnalysis.passRecommended
-        ? '此時虛手可保留實地，避免在自己地盤內多填目數。'
-        : `師範認為盤面仍有活躍選點，例如 ${preAnalysis.topMoves[0]?.coord || '邊界官子'}。`,
+        ? t('evalPassGoodExp')
+        : t('evalPassEarlyExp', { coord: preAnalysis.topMoves[0]?.coord || t('evalPassEarlyFallback') }),
       bestMoves: preAnalysis.topMoves,
       features: null,
     };
@@ -1011,9 +1012,10 @@ export async function evaluateUserMoveAsync(boardBefore, moveIdx, color, boardAf
   const priorDiff = bestCand && matchedCand ? Math.max(0, bestCand.priorScore - matchedCand.priorScore) : 25;
 
   // Detect specific tactical misses (did user miss an urgent capture or atari save?)
+  const savePrefix = t('tagSaveAtari', { n: '' }).slice(0, 2);
+  const capPrefix = t('tagCapture', { n: '' }).slice(0, 2);
   const missedUrgent = bestCand && bestCand.idx !== moveIdx && (
-    bestCand.tags.some((t) => t.startsWith('救出')) ||
-    bestCand.tags.some((t) => t.startsWith('提吃'))
+    bestCand.tags.some((tg) => tg.startsWith(savePrefix) || tg.startsWith(capPrefix))
   );
 
   // Adjust drop for glaring tactical mistakes / shape blunders
@@ -1033,27 +1035,27 @@ export async function evaluateUserMoveAsync(boardBefore, moveIdx, color, boardAf
 
   // Assign Grade
   let grade = 'good';
-  let gradeLabel = '穩健';
+  let gradeLabel = t('gradeGood');
   const isSharpTactical = features.capturedCount > 0 || features.savedAtariStones > 0 || features.putOppInAtari.length > 0 || features.isCut;
 
   if (wrDrop <= 0.015 && bestCand && (bestCand.idx === moveIdx || isSharpTactical)) {
     grade = isSharpTactical ? 'brilliant' : 'great';
-    gradeLabel = isSharpTactical ? '妙手！' : '首選好手';
+    gradeLabel = isSharpTactical ? t('gradeBrilliant') : t('gradeBest');
   } else if (wrDrop <= 0.035) {
     grade = 'great';
-    gradeLabel = '好手';
+    gradeLabel = t('gradeGreat');
   } else if (wrDrop <= 0.075) {
     grade = 'good';
-    gradeLabel = '穩健';
+    gradeLabel = t('gradeGood');
   } else if (wrDrop <= 0.13) {
     grade = 'inaccuracy';
-    gradeLabel = '緩手';
+    gradeLabel = t('gradeInaccuracy');
   } else if (wrDrop <= 0.20) {
     grade = 'mistake';
-    gradeLabel = '問題手';
+    gradeLabel = t('gradeMistake');
   } else {
     grade = 'blunder';
-    gradeLabel = '惡手';
+    gradeLabel = t('gradeBlunder');
   }
 
   // Craft Specific, Authentic Go Coaching Feedback
@@ -1063,59 +1065,67 @@ export async function evaluateUserMoveAsync(boardBefore, moveIdx, color, boardAf
   const bestReason = bestCand ? bestCand.reason : '';
 
   if (features.filledOwnEye) {
-    headline = `您在 ${features.coord} 填死了自己的真眼！`;
-    explanation = `除非氣緊被迫補棋，否則絕不可填掉自己的真眼，這會縮小眼位並白白浪費一手。${bestLabel ? `建議改下 ${bestLabel}（${bestReason}）。` : ''}`;
+    headline = t('evalFillEyeHead', { coord: features.coord });
+    const rec = bestLabel ? t('evalRecTry', { coord: bestLabel, reason: bestReason }) : '';
+    explanation = t('evalFillEyeExp', { rec });
   } else if (features.selfAtari && !features.isSnapbackSetup) {
-    headline = `在 ${features.coord} 自填打吃！`;
-    explanation = `把${features.selfAtariSize > 1 ? `這 ${features.selfAtariSize} 顆棋子` : '這顆子'}送入只剩一口氣的叫吃狀態，等於白送對手提子。${bestLabel ? `不妨考慮 ${bestLabel}：${bestReason}。` : ''}`;
+    headline = t('evalSelfAtariHead', { coord: features.coord });
+    const stones = features.selfAtariSize > 1
+      ? t('evalStonesMany', { n: features.selfAtariSize })
+      : t('evalStonesOne');
+    const rec = bestLabel ? t('evalRecAlt', { coord: bestLabel, reason: bestReason }) : '';
+    explanation = t('evalSelfAtariExp', { stones, rec });
   } else if (missedUrgent && bestCand) {
-    headline = `錯過局部急所 ${bestLabel}`;
-    explanation = `${bestLabel} 可「${bestCand.tags[0]}」，這是眼前最緊急的戰術！圍棋中「急所先於大場」，救子或提子通常遠大於單純圍空。`;
+    headline = t('evalMissedUrgentHead', { coord: bestLabel });
+    explanation = t('evalMissedUrgentExp', { coord: bestLabel, tag: bestCand.tags[0] });
   } else if (features.isEmptyTriangle && grade !== 'great' && grade !== 'brilliant') {
-    headline = `凝重愚形——${features.coord} 形成空三角`;
-    explanation = `此手構成效率偏低的「空三角」愚形，氣數較少且圍空效率差。${bestLabel ? `師範更推薦 ${bestLabel}（${bestReason}）。` : ''}`;
+    headline = t('evalEmptyTriHead', { coord: features.coord });
+    const rec = bestLabel ? t('evalRecPrefer', { coord: bestLabel, reason: bestReason }) : '';
+    explanation = t('evalEmptyTriExp', { rec });
   } else if (grade === 'brilliant' || grade === 'great') {
     if (features.capturedCount > 0) {
-      headline = `漂亮提子（${features.coord}）！`;
-      explanation = `乾淨提吃對方 ${features.capturedCount} 子，既確保實地，也徹底消除了對方的餘味。`;
+      headline = t('evalCapHead', { coord: features.coord });
+      explanation = t('evalCapExp', { n: features.capturedCount });
     } else if (features.savedAtariStones > 0) {
-      headline = `關鍵救子（${features.coord}）！`;
-      explanation = `及時長出逃離叫吃，成功保住我方 ${features.savedAtariStones} 子並維持聯絡。`;
+      headline = t('evalSaveHead', { coord: features.coord });
+      explanation = t('evalSaveExp', { n: features.savedAtariStones });
     } else if (features.isTigersMouth) {
-      headline = `漂亮的虎口好形（${features.coord}）`;
-      explanation = `虎口（掛黏）既能嚴密防守斷點，又保留最豐富的眼位彈性。`;
+      headline = t('evalTigerHead', { coord: features.coord });
+      explanation = t('evalTigerExp');
     } else if (features.isHane) {
-      headline = `強硬的一扳（${features.coord}）！`;
-      explanation = `繞到對方棋子頭上扳出，有效緊縮對手氣數並對棋形施壓。`;
+      headline = t('evalHaneHead', { coord: features.coord });
+      explanation = t('evalHaneExp');
     } else if (features.isCut) {
-      headline = `果斷切斷（${features.coord}）！`;
-      explanation = `將對手分斷成兩塊孤棋，迫使對手兩面受敵、難以兼顧。`;
+      headline = t('evalCutHead', { coord: features.coord });
+      explanation = t('evalCutExp');
     } else if (features.putOppInAtari.length > 0) {
-      headline = `犀利叫吃（${features.coord}）！`;
-      explanation = `叫吃對手搶佔先手（主動權），迫使對方必須應手防守。`;
+      headline = t('evalAtariHead', { coord: features.coord });
+      explanation = t('evalAtariExp');
     } else {
-      headline = `大局方向極佳（${features.coord}）`;
-      explanation = `與師範的首選非常一致——在實地與外勢之間取得極佳平衡。`;
+      headline = t('evalDirHead', { coord: features.coord });
+      explanation = t('evalDirExp');
     }
   } else if (grade === 'good') {
-    headline = `紮實可下的一手（${features.coord}）`;
+    headline = t('evalGoodHead', { coord: features.coord });
     explanation = bestCand && bestCand.idx !== moveIdx
-      ? `步調穩健。師範略微偏好 ${bestLabel}（${bestReason}），勝率差距約 ${(wrDrop * 100).toFixed(1)}%。`
-      : `維持了良好的棋形與全盤平衡。`;
+      ? t('evalGoodExpAlt', { coord: bestLabel, reason: bestReason, drop: (wrDrop * 100).toFixed(1) })
+      : t('evalGoodExpSame');
   } else {
     // Inaccuracy / Mistake / Blunder with positional reason
     const stoneCount = countStonesOnBoard(boardBefore);
     if (features.line === 1 && stoneCount < boardBefore.size * boardBefore.size * 0.45) {
-      headline = `過早落子一路（${features.coord}）`;
-      explanation = `未到官子階段前，一路落子能圍到的目數極少。應優先考慮三、四路或更大之處，例如 ${bestLabel}（${bestReason}）。`;
+      headline = t('evalLine1Head', { coord: features.coord });
+      explanation = t('evalLine1Exp', { coord: bestLabel, reason: bestReason });
     } else if (features.line === 2 && stoneCount < 16) {
-      headline = `開局過早走二路（${features.coord}）`;
-      explanation = `開局階段二路被稱為「敗北之線」，過於低位被動。建議瞄準三路（實地）或四路（外勢），例如 ${bestLabel}。`;
+      headline = t('evalLine2Head', { coord: features.coord });
+      explanation = t('evalLine2Exp', { coord: bestLabel });
     } else {
-      headline = `${bestLabel ? `盤面有更大之處：${bestLabel}` : `${features.coord} 方向略緩`}`;
+      headline = bestLabel
+        ? t('evalBiggerHead', { coord: bestLabel })
+        : t('evalSlowHead', { coord: features.coord });
       explanation = bestCand
-        ? `這手估計損失約 ${(wrDrop * 100).toFixed(1)}% 勝率。建議考慮 ${bestLabel}：${bestReason}。`
-        : `試著尋找能壓迫弱棋，或在開闊三、四路擴張實地的大場。`;
+        ? t('evalSlowExp', { drop: (wrDrop * 100).toFixed(1), coord: bestLabel, reason: bestReason })
+        : t('evalSlowFallback');
     }
   }
 

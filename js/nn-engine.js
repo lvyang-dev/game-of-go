@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { EMPTY, BLACK, WHITE, opponent } from './engine.js';
+import { t } from './i18n.js';
 
 const ORT_CDN_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.js';
 const MODEL_CACHE_NAME = 'kaya-sensei-onnx-v1';
@@ -46,10 +47,10 @@ async function ensureOrtLoaded() {
         }
         resolve(window.ort);
       } else {
-        reject(new Error('ONNX Runtime Web 載入失敗'));
+        reject(new Error(t('nnErrOrtLoad')));
       }
     };
-    script.onerror = () => reject(new Error('無法連線至 ONNX Runtime Web CDN（請確認網路連線）'));
+    script.onerror = () => reject(new Error(t('nnErrOrtCdn')));
     document.head.appendChild(script);
   });
 
@@ -347,7 +348,7 @@ class NeuralEngineManager {
     // 2. Stream download with live percentage updates
     const resp = await fetch(url);
     if (!resp.ok) {
-      throw new Error(`找不到模型檔案（HTTP ${resp.status}）`);
+      throw new Error(t('nnErrNotFound', { status: resp.status }));
     }
 
     const contentLength = parseInt(resp.headers.get('content-length') || '0', 10);

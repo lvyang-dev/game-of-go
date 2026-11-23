@@ -27,6 +27,18 @@ import { PUZZLE_CATEGORIES, PUZZLES } from './puzzles.js';
 import { GobanRenderer } from './board-renderer.js';
 import { sound } from './audio.js';
 import { neuralEngine, NN_MODEL_PRESETS } from './nn-engine.js';
+import {
+  SUPPORTED_LANGS,
+  DEFAULT_LANG,
+  setLang,
+  t,
+  localizeRank,
+  getLocalizedCategory,
+  getLocalizedPuzzle,
+  getLocalizedBranchMessage,
+  getLocalizedTrapMessage,
+  applyDomTranslations,
+} from './i18n.js';
 
 const STORAGE_SOLVED_KEY = 'kaya_sensei_solved_v1';
 const STORAGE_SETTINGS_KEY = 'kaya_sensei_settings_v1';
@@ -46,6 +58,7 @@ const state = {
     handicap: 0,
     coachEnabled: true,
     rules: 'chinese',
+    language: DEFAULT_LANG,
   },
 
   // Play mode runtime
@@ -62,12 +75,18 @@ const state = {
   winrateHistory: [], // [{ moveNum, blackWinrate, scoreLeadBlack, grade?, color? }]
   lastUserMoveNum: null,
 
+  // Problem Review & Retry Compare Runtime
+  retrySession: null, // { moveNum, originalMove: { x, y, idx, color, analysis }, savedOriginalGame: GoGame, savedWinrateHistory: [] }
+  problemReviewList: [], // [{ moveNum, m, analysis }]
+  problemReviewIndex: -1,
+
   // Dojo mode runtime
   dojoCategory: 'all',
   dojoPuzzleIndex: 0,
   dojoBoard: null,
   dojoNode: null,
   dojoStep: 0,
+  dojoPathCoords: [],
   dojoStatus: 'playing', // 'playing' | 'animating' | 'wrong' | 'solved'
   dojoLastMove: null,
   dojoHintLevel: 0,
@@ -103,10 +122,16 @@ try {
     if (savedSettings.rules === 'chinese' || savedSettings.rules === 'japanese') {
       state.settings.rules = savedSettings.rules;
     }
+    if (SUPPORTED_LANGS.includes(savedSettings.language)) {
+      state.settings.language = savedSettings.language;
+    }
   }
 } catch {
   // Ignore storage errors
 }
+
+// Initialize language module from persisted settings
+setLang(state.settings.language);
 
 function persistSolved() {
   try {
@@ -137,6 +162,7 @@ const el = {
   tabPlay: document.getElementById('tab-play'),
   tabDojo: document.getElementById('tab-dojo'),
   dojoBadgeCount: document.getElementById('dojo-badge-count'),
+  langSelect: document.getElementById('lang-select'),
   btnNewGame: document.getElementById('btn-new-game'),
   btnSound: document.getElementById('btn-sound'),
   iconSoundOn: document.getElementById('icon-sound-on'),
@@ -206,6 +232,20 @@ const el = {
   ruleJapanese: document.getElementById('rule-japanese'),
   postgameReview: document.getElementById('postgame-review'),
   keyMomentsList: document.getElementById('key-moments-list'),
+
+  // Retry Comparison & Problem Review Elements
+  retryCompareBanner: document.getElementById('retry-compare-banner'),
+  retryBannerText: document.getElementById('retry-banner-text'),
+  btnShowHintsRetry: document.getElementById('btn-show-hints-retry'),
+  btnRestoreOriginalMove: document.getElementById('btn-restore-original-move'),
+  problemReviewCard: document.getElementById('problem-review-card'),
+  problemReviewTitle: document.getElementById('problem-review-title'),
+  problemReviewSubtitle: document.getElementById('problem-review-subtitle'),
+  problemReviewInfo: document.getElementById('problem-review-info'),
+  btnPrevProblem: document.getElementById('btn-prev-problem'),
+  btnPracticeCurrentProblem: document.getElementById('btn-practice-current-problem'),
+  btnNextProblem: document.getElementById('btn-next-problem'),
+  btnExitProblemReview: document.getElementById('btn-exit-problem-review'),
 
   // Dojo Elements
   dojoCatTag: document.getElementById('dojo-cat-tag'),
@@ -337,6 +377,27 @@ function renderCurrentBoard() {
 
     const canHover = isLive && state.game.phase === 'playing' && !state.aiThinking && state.game.turn === state.settings.playerColor;
 
+    // Original Move Marker during Retry Session or Problem Review
+    let originalMoveMarker = null;
+    if (state.retrySession && state.retrySession.originalMove && !state.retrySession.originalMove.pass) {
+      originalMoveMarker = {
+        x: state.retrySession.originalMove.x,
+        y: state.retrySession.originalMove.y,
+        moveNum: state.retrySession.moveNum,
+        label: t('origMoveTag', { moveNum: state.retrySession.moveNum }),
+      };
+    } else if (state.problemReviewIndex >= 0 && state.problemReviewList[state.problemReviewIndex]) {
+      const prob = state.problemReviewList[state.problemReviewIndex];
+      if (prob && prob.m && !prob.m.pass) {
+        originalMoveMarker = {
+          x: prob.m.x,
+          y: prob.m.y,
+          moveNum: prob.moveNum,
+          label: t('origMoveTag', { moveNum: prob.moveNum }),
+        };
+      }
+    }
+
     renderer.render({
       board,
       viewport: null,
@@ -346,12 +407,13 @@ function renderCurrentBoard() {
       showCoords: true,
       showMoveNumbers: state.showNumbers,
       moveNumberMap,
-      hints: isLive ? state.activeHints : [],
+      hints: (isLive || state.problemReviewIndex >= 0) ? state.activeHints : [],
       influenceMap,
       territoryMap,
       deadStones: scoringMode ? state.game.deadStones : null,
       showAtariDanger: state.showAtari && !scoringMode,
       scoringMode,
+      originalMoveMarker,
     });
   } else {
     // Dojo Mode
@@ -440,6 +502,11 @@ function startNewGame(customSettings = null) {
   state.activeHints = [];
   state.latestOwnershipMap = null;
   state.lastUserMoveNum = null;
+  state.retrySession = null;
+  state.problemReviewList = [];
+  state.problemReviewIndex = -1;
+  if (el.retryCompareBanner) el.retryCompareBanner.classList.add('hidden');
+  if (el.problemReviewCard) el.problemReviewCard.classList.add('hidden');
 
   state.game = new GoGame({
     size: state.settings.size,
@@ -481,10 +548,9 @@ function resetCoachMessage() {
 
   const isUserTurn = state.game && state.game.turn === state.settings.playerColor;
   el.coachHeadline.textContent = isUserTurn
-    ? '準備就緒，請下出您的下一手！'
-    : '師範 AI 正在佈局開局…';
-  el.coachExplanation.textContent =
-    '我會即時評析您的每一手——包含局部急所、棋形效率與佈局方向，遇到問題手時可一鍵重試。';
+    ? t('coachReadyUser')
+    : t('coachReadyAi');
+  el.coachExplanation.textContent = t('coachDefaultExp');
 }
 
 function syncCoachVisibility() {
@@ -503,13 +569,17 @@ function updatePlayUI() {
   const { board, isLive, moveIndex } = getDisplayedPlayState();
 
   const userIsBlack = state.settings.playerColor === BLACK;
-  el.blackName.textContent = userIsBlack ? '您（黑棋）' : '師範 AI（黑棋）';
-  el.whiteName.textContent = userIsBlack ? '師範 AI（白棋）' : '您（白棋）';
+  el.blackName.textContent = userIsBlack ? t('youBlack') : t('aiBlack');
+  el.whiteName.textContent = userIsBlack ? t('aiWhite') : t('youWhite');
 
   el.blackCaptures.textContent = board.captures[BLACK];
   el.whiteCaptures.textContent = board.captures[WHITE];
 
-  el.gameMetaPill.textContent = `${g.size}路 · 貼 ${g.komi} 目 · ${preset.rank} AI`;
+  el.gameMetaPill.textContent = t('gameMetaPill', {
+    size: g.size,
+    komi: g.komi,
+    rank: localizeRank(preset.rank),
+  });
 
   const blackActive = g.phase === 'playing' && g.turn === BLACK && isLive;
   const whiteActive = g.phase === 'playing' && g.turn === WHITE && isLive;
@@ -517,24 +587,31 @@ function updatePlayUI() {
   el.playerWhiteCard.classList.toggle('active-turn', whiteActive);
 
   if (!isLive) {
-    el.turnStatus.textContent = `檢視第 ${moveIndex} 手`;
+    el.turnStatus.textContent = t('turnViewing', { move: moveIndex });
   } else if (g.phase === 'scoring') {
-    el.turnStatus.textContent = '請點選死子確認勝負';
+    el.turnStatus.textContent = t('turnScoring');
   } else if (g.phase === 'finished') {
     if (g.finalScore?.resigned) {
-      el.turnStatus.textContent = `${g.finalScore.winner === BLACK ? '黑棋' : '白棋'}中盤勝`;
+      el.turnStatus.textContent = t('turnResignWin', {
+        winner: g.finalScore.winner === BLACK ? t('blackShort') : t('whiteShort'),
+      });
     } else if (g.finalScore) {
-      el.turnStatus.textContent = `${g.finalScore.winner === BLACK ? '黑勝' : '白勝'} ${g.finalScore.margin.toFixed(1)} 目`;
+      el.turnStatus.textContent = t('turnMarginWin', {
+        winnerShort: g.finalScore.winner === BLACK ? t('blackWinShort') : t('whiteWinShort'),
+        margin: g.finalScore.margin.toFixed(1),
+      });
     }
   } else if (state.aiThinking) {
-    el.turnStatus.textContent = '師範 AI 思考中…';
+    el.turnStatus.textContent = t('turnAiThinking');
   } else {
-    el.turnStatus.textContent = g.turn === BLACK ? '黑棋落子' : '白棋落子';
+    el.turnStatus.textContent = g.turn === BLACK ? t('turnBlackPlay') : t('turnWhitePlay');
   }
 
   // Review navigation buttons
   const total = g.moves.length;
-  el.moveCounter.textContent = total === 0 ? '開局' : `第 ${moveIndex}/${total} 手`;
+  el.moveCounter.textContent = total === 0
+    ? t('moveOpening')
+    : t('moveCounterFmt', { cur: moveIndex, total });
   el.btnNavStart.disabled = moveIndex <= 0;
   el.btnNavPrev.disabled = moveIndex <= 0;
   el.btnNavNext.disabled = moveIndex >= total;
@@ -571,26 +648,30 @@ function updateScoringCard() {
   el.ruleJapanese.classList.toggle('active', state.settings.rules === 'japanese');
 
   if (g.phase === 'scoring') {
-    el.scoringTitle.textContent = '點目與死子確認';
-    el.scoringInstructions.textContent =
-      '雙方皆已虛手。請點擊棋盤上的死子棋串切換狀態，確認無誤後點選「確認勝負」。';
+    el.scoringTitle.textContent = t('scoringTitle');
+    el.scoringInstructions.textContent = t('scoringInstrPlaying');
     el.scoringActions.classList.remove('hidden');
     el.postgameReview.classList.add('hidden');
 
     const sc = calculateScore(g.board, g.komi, g.deadStones, state.settings.rules);
     renderScoreBreakdown(sc);
   } else {
-    el.scoringTitle.textContent = '終局結果';
+    el.scoringTitle.textContent = t('scoringTitleDone');
     el.scoringActions.classList.add('hidden');
 
     if (g.finalScore?.resigned) {
-      const winnerLabel = g.finalScore.winner === BLACK ? '黑棋' : '白棋';
-      el.scoringInstructions.textContent = `${g.finalScore.resignedBy === BLACK ? '黑棋' : '白棋'}認輸——${winnerLabel}中盤勝！可點擊下方關鍵手數重練檢討，或新開一局。`;
+      const winnerLabel = g.finalScore.winner === BLACK ? t('blackShort') : t('whiteShort');
+      const loserLabel = g.finalScore.resignedBy === BLACK ? t('blackShort') : t('whiteShort');
+      el.scoringInstructions.textContent = t('scoringInstrResign', { loser: loserLabel, winner: winnerLabel });
       el.scoreBreakdown.innerHTML = '';
     } else {
       const sc = calculateScore(g.board, g.komi, g.deadStones, state.settings.rules);
-      const winnerLabel = sc.winner === BLACK ? '黑棋' : '白棋';
-      el.scoringInstructions.textContent = `${winnerLabel}勝 ${sc.margin.toFixed(1)} 目（採用${sc.rules === 'chinese' ? '數子法' : '數目法'}規則）。`;
+      const winnerLabel = sc.winner === BLACK ? t('blackShort') : t('whiteShort');
+      el.scoringInstructions.textContent = t('scoringInstrMargin', {
+        winner: winnerLabel,
+        margin: sc.margin.toFixed(1),
+        rules: sc.rules === 'chinese' ? t('ruleChinese') : t('ruleJapanese'),
+      });
       renderScoreBreakdown(sc);
     }
 
@@ -600,20 +681,20 @@ function updateScoringCard() {
 
 function renderScoreBreakdown(sc) {
   const bSub = sc.rules === 'chinese'
-    ? `空 ${sc.blackTerritory} ＋ 子 ${sc.blackStones}`
-    : `空 ${sc.blackTerritory} ＋ 提子 ${sc.blackCaptures + sc.deadWhite}`;
+    ? t('scoreSubBlackChinese', { terr: sc.blackTerritory, stones: sc.blackStones })
+    : t('scoreSubBlackJapanese', { terr: sc.blackTerritory, caps: sc.blackCaptures + sc.deadWhite });
   const wSub = sc.rules === 'chinese'
-    ? `空 ${sc.whiteTerritory} ＋ 子 ${sc.whiteStones} ＋ 貼 ${sc.komi}`
-    : `空 ${sc.whiteTerritory} ＋ 提子 ${sc.whiteCaptures + sc.deadBlack} ＋ 貼 ${sc.komi}`;
+    ? t('scoreSubWhiteChinese', { terr: sc.whiteTerritory, stones: sc.whiteStones, komi: sc.komi })
+    : t('scoreSubWhiteJapanese', { terr: sc.whiteTerritory, caps: sc.whiteCaptures + sc.deadBlack, komi: sc.komi });
 
   el.scoreBreakdown.innerHTML = `
     <div class="score-box ${sc.winner === BLACK ? 'winner' : ''}">
-      <div class="score-box-label">黑棋總計</div>
+      <div class="score-box-label">${t('scoreBlackTotal')}</div>
       <div class="score-box-val">${sc.blackTotal.toFixed(1)}</div>
       <div class="score-box-sub">${bSub}</div>
     </div>
     <div class="score-box ${sc.winner === WHITE ? 'winner' : ''}">
-      <div class="score-box-label">白棋總計</div>
+      <div class="score-box-label">${t('scoreWhiteTotal')}</div>
       <div class="score-box-val">${sc.whiteTotal.toFixed(1)}</div>
       <div class="score-box-sub">${wSub}</div>
     </div>
@@ -625,51 +706,208 @@ function renderKeyMoments() {
     (m) => m.color === state.settings.playerColor && m.analysis && m.analysis.winrateDelta < -0.05
   );
   userMoves.sort((a, b) => a.analysis.winrateDelta - b.analysis.winrateDelta);
-  const top3 = userMoves.slice(0, 3);
+  const topProblems = userMoves.slice(0, 5); // Up to top 5 problem moves
+
+  state.problemReviewList = topProblems.map((m) => ({
+    moveNum: m.moveNum,
+    m,
+    analysis: m.analysis,
+  }));
 
   el.postgameReview.classList.remove('hidden');
-  if (top3.length === 0) {
-    el.keyMomentsList.innerHTML = `<div class="muted-text">精彩的一局！本局沒有被師範標記的重大失誤。</div>`;
+  if (topProblems.length === 0) {
+    el.keyMomentsList.innerHTML = `<div class="muted-text">${t('noMistakesMsg')}</div>`;
     return;
   }
 
   el.keyMomentsList.innerHTML = '';
-  for (const m of top3) {
+  topProblems.forEach((m, idx) => {
     const row = document.createElement('div');
     row.className = 'moment-row';
     const bestCoord = m.analysis.bestMoves?.[0]?.coord || '';
     const dropPct = Math.abs(m.analysis.winrateDelta * 100).toFixed(0);
+    const origCoord = coordToLabel(m.x, m.y, state.game.size);
     row.innerHTML = `
-      <div class="moment-info">
-        <strong>第 ${m.moveNum} 手（${coordToLabel(m.x, m.y, state.game.size)}）· −${dropPct}%</strong>
-        <span>${m.analysis.gradeLabel}${bestCoord ? ` · 師範推薦 ${bestCoord}` : ''}</span>
+      <div class="moment-info" title="${t('momentTitle', { moveNum: m.moveNum })}">
+        <strong>${t('momentStrong', { moveNum: m.moveNum, coord: origCoord, dropPct })}</strong>
+        <span>${m.analysis.gradeLabel}${bestCoord ? t('momentSenseiRec', { coord: bestCoord }) : ''}</span>
       </div>
-      <button class="btn btn-accent" style="padding:5px 9px;font-size:11.5px">從此手重練</button>
+      <div class="moment-actions">
+        <button class="btn btn-subtle btn-inspect" style="padding:4px 8px;font-size:11.5px">${t('btnInspect')}</button>
+        <button class="btn btn-accent btn-retry" style="padding:4px 8px;font-size:11.5px">${t('btnRetryShort')}</button>
+      </div>
     `;
-    row.querySelector('button').addEventListener('click', () => {
+    row.querySelector('.moment-info').addEventListener('click', () => {
+      startProblemReview(idx);
+    });
+    row.querySelector('.btn-inspect').addEventListener('click', () => {
+      startProblemReview(idx);
+    });
+    row.querySelector('.btn-retry').addEventListener('click', () => {
       practiceFromMove(m.moveNum);
     });
     el.keyMomentsList.appendChild(row);
+  });
+}
+
+function startProblemReview(probIdx) {
+  if (state.problemReviewList.length === 0) return;
+  const clamped = Math.max(0, Math.min(state.problemReviewList.length - 1, probIdx));
+  state.problemReviewIndex = clamped;
+  const prob = state.problemReviewList[clamped];
+
+  // Jump to the state right before this move was played (moveNum - 1)
+  setReviewIndex(prob.moveNum - 1);
+
+  // Show candidate hints on board for this problem move
+  if (prob.analysis?.bestMoves) {
+    state.activeHints = prob.analysis.bestMoves;
   }
+
+  // Update Problem Review Card UI
+  el.problemReviewCard.classList.remove('hidden');
+  el.problemReviewSubtitle.textContent = t('problemReviewSubtitle', {
+    cur: clamped + 1,
+    total: state.problemReviewList.length,
+  });
+  const origCoord = coordToLabel(prob.m.x, prob.m.y, state.game.size);
+  const bestCoord = prob.analysis.bestMoves?.[0]?.coord || '';
+  const dropPct = Math.abs(prob.analysis.winrateDelta * 100).toFixed(1);
+  const recDetail = bestCoord
+    ? t('problemReviewRecTop', { coord: bestCoord, reason: prob.analysis.bestMoves[0]?.reason || '' })
+    : t('problemReviewRecBoard');
+
+  el.problemReviewInfo.innerHTML = `
+    <div style="margin-bottom:4px;">
+      <strong style="color:var(--text-primary)">${t('problemReviewMoveLabel', { moveNum: prob.moveNum, coord: origCoord })}</strong>
+      <span class="grade-badge grade-${prob.analysis.grade}" style="margin-left:6px">${prob.analysis.gradeLabel}</span>
+      <span style="color:var(--text-muted);font-size:12px;margin-left:4px">${t('problemReviewDrop', { dropPct })}</span>
+    </div>
+    <div style="font-weight:600;color:var(--accent-gold);margin-bottom:3px">${prob.analysis.headline}</div>
+    <div style="font-size:12px;color:var(--text-secondary);line-height:1.45">${prob.analysis.explanation}</div>
+    <div style="margin-top:6px;font-size:11.5px;color:var(--emerald)">
+      ${t('problemReviewRec', { detail: recDetail })}
+    </div>
+  `;
+
+  el.btnPrevProblem.disabled = clamped <= 0;
+  el.btnNextProblem.disabled = clamped >= state.problemReviewList.length - 1;
+
+  // Highlight corresponding moment row
+  const rows = el.keyMomentsList.querySelectorAll('.moment-row');
+  rows.forEach((r, i) => r.classList.toggle('active', i === clamped));
+
+  renderCurrentBoard();
+}
+
+function exitProblemReview() {
+  state.problemReviewIndex = -1;
+  state.activeHints = [];
+  el.problemReviewCard.classList.add('hidden');
+  const rows = el.keyMomentsList.querySelectorAll('.moment-row');
+  rows.forEach((r) => r.classList.remove('active'));
+  renderCurrentBoard();
+}
+
+function cloneGame(srcGame) {
+  const cloned = new GoGame({
+    size: srcGame.size,
+    komi: srcGame.komi,
+    handicap: srcGame.handicap,
+    rules: srcGame.rules,
+  });
+  // Replay moves
+  for (const m of srcGame.moves) {
+    if (m.pass) {
+      cloned.playPass();
+    } else {
+      cloned.playMove(m.x, m.y);
+    }
+  }
+  return cloned;
 }
 
 function practiceFromMove(moveNum) {
+  // Check if target move exists in game
+  const targetMove = state.game.moves.find((m) => m.moveNum === moveNum);
+  if (!targetMove) return;
+
+  // If we don't have a saved backup of the original game yet, save it now!
+  if (!state.retrySession) {
+    state.retrySession = {
+      moveNum,
+      originalMove: {
+        x: targetMove.x,
+        y: targetMove.y,
+        idx: targetMove.idx,
+        color: targetMove.color,
+        pass: targetMove.pass,
+        analysis: targetMove.analysis,
+      },
+      savedOriginalGame: cloneGame(state.game),
+      savedWinrateHistory: [...state.winrateHistory],
+    };
+  } else {
+    // Updating existing retry session's target
+    state.retrySession.moveNum = moveNum;
+    state.retrySession.originalMove = {
+      x: targetMove.x,
+      y: targetMove.y,
+      idx: targetMove.idx,
+      color: targetMove.color,
+      pass: targetMove.pass,
+      analysis: targetMove.analysis,
+    };
+  }
+
   // Undo back to just before moveNum so user can replay that decision live against AI
   const stepsToUndo = state.game.moves.length - (moveNum - 1);
-  if (stepsToUndo <= 0) return;
-  state.aiRunId++;
-  state.aiThinking = false;
-  state.game.undo(stepsToUndo);
-  state.winrateHistory = state.winrateHistory.slice(0, state.game.moves.length + 1);
+  if (stepsToUndo > 0) {
+    state.aiRunId++;
+    state.aiThinking = false;
+    state.game.undo(stepsToUndo);
+    state.winrateHistory = state.winrateHistory.slice(0, state.game.moves.length + 1);
+  }
+
   state.reviewIndex = null;
   state.activeHints = [];
   el.coachGradeRow.classList.add('hidden');
   el.btnRetryMove.classList.add('hidden');
-  el.coachHeadline.textContent = `重練第 ${moveNum} 手——找出更強的下法！`;
-  el.coachExplanation.textContent = '請直接在棋盤上下出您的新構想，或點擊「顯示推薦選點」參考師範建議。';
+
+  const origCoord = coordToLabel(state.retrySession.originalMove.x, state.retrySession.originalMove.y, state.game.size);
+  el.coachHeadline.textContent = t('coachRetryHead', { moveNum, coord: origCoord });
+  el.coachExplanation.textContent = t('coachRetryExp', { coord: origCoord });
+
+  // Update retry banner on the board
+  if (el.retryCompareBanner) {
+    el.retryCompareBanner.classList.remove('hidden');
+    el.retryBannerText.textContent = t('retryBannerText', { moveNum, coord: origCoord });
+  }
+
   updatePlayUI();
   renderCurrentBoard();
-  showToast(`已倒回至第 ${moveNum} 手，試試更強的一手！`);
+  showToast(t('toastRetryRewound', { moveNum, coord: origCoord }));
+}
+
+function restoreOriginalGame() {
+  if (!state.retrySession || !state.retrySession.savedOriginalGame) return;
+  state.aiRunId++;
+  state.aiThinking = false;
+
+  state.game = state.retrySession.savedOriginalGame;
+  state.winrateHistory = state.retrySession.savedWinrateHistory || [];
+  state.retrySession = null;
+  state.activeHints = [];
+  state.reviewIndex = null;
+
+  if (el.retryCompareBanner) {
+    el.retryCompareBanner.classList.add('hidden');
+  }
+
+  resetCoachMessage();
+  updatePlayUI();
+  renderCurrentBoard();
+  showToast(t('toastRestoredOriginal'));
 }
 
 function updateWinrateDisplay(atMoveIndex) {
@@ -685,11 +923,11 @@ function updateWinrateDisplay(atMoveIndex) {
 
   const lead = entry.scoreLeadBlack;
   if (Math.abs(lead) < 1.2) {
-    el.scoreLeadBadge.textContent = '勢均力敵';
+    el.scoreLeadBadge.textContent = t('leadEven');
   } else if (lead > 0) {
-    el.scoreLeadBadge.textContent = `黑領先 ${lead.toFixed(1)} 目`;
+    el.scoreLeadBadge.textContent = t('leadBlack', { lead: lead.toFixed(1) });
   } else {
-    el.scoreLeadBadge.textContent = `白領先 ${Math.abs(lead).toFixed(1)} 目`;
+    el.scoreLeadBadge.textContent = t('leadWhite', { lead: Math.abs(lead).toFixed(1) });
   }
 
   renderWinrateGraph(atMoveIndex);
@@ -774,7 +1012,7 @@ function setReviewIndex(targetIdx) {
 async function handlePlayerMove(x, y) {
   const g = state.game;
   if (state.reviewIndex !== null && state.reviewIndex < g.moves.length) {
-    showToast('目前正在檢視歷史手數——點擊 ›| 返回最新局面');
+    showToast(t('toastViewingHistory'));
     return;
   }
 
@@ -797,7 +1035,7 @@ async function handlePlayerMove(x, y) {
   const res = g.playMove(x, y);
   if (!res.legal) {
     sound.playSoftError();
-    showToast(res.reason || '無效落子');
+    showToast(res.reason || t('toastIllegalMove'));
     return;
   }
 
@@ -822,8 +1060,8 @@ async function handlePlayerMove(x, y) {
 
   // Run Live Coach Evaluation if enabled
   if (state.settings.coachEnabled) {
-    el.coachHeadline.textContent = '師範正在評析您的這手棋…';
-    el.coachExplanation.textContent = '正在檢視局部急所、棋形效率與更佳選點。';
+    el.coachHeadline.textContent = t('coachEvaluatingHead');
+    el.coachExplanation.textContent = t('coachEvaluatingExp');
     el.coachGradeRow.classList.add('hidden');
     el.btnRetryMove.classList.add('hidden');
     el.coachCandidates.classList.add('hidden');
@@ -849,8 +1087,35 @@ async function handlePlayerMove(x, y) {
       histEntry.scoreLeadBlack = evaluation.scoreLeadBlack;
       histEntry.grade = evaluation.grade;
     }
+
+    // If this move was made during a retry session, compare with original move!
+    if (state.retrySession && state.retrySession.originalMove) {
+      const orig = state.retrySession.originalMove;
+      const origCoord = coordToLabel(orig.x, orig.y, g.size);
+      const newCoord = coordToLabel(moveRecord.x, moveRecord.y, g.size);
+      const origWrDrop = orig.analysis?.winrateDelta || -0.15;
+      const newWrDelta = evaluation.winrateDelta || 0;
+      const wrDiffPct = ((newWrDelta - origWrDrop) * 100).toFixed(1);
+
+      if (newWrDelta > origWrDrop + 0.03) {
+        evaluation.headline = t('coachRetryBetterHead', { newCoord, origCoord });
+        evaluation.explanation = t('coachRetryBetterExp', { diff: wrDiffPct, origExp: evaluation.explanation });
+      } else if (newWrDelta < origWrDrop - 0.03) {
+        evaluation.headline = t('coachRetryWorseHead', { newCoord, origCoord });
+        evaluation.explanation = t('coachRetryWorseExp', { diff: wrDiffPct, origExp: evaluation.explanation });
+      } else {
+        evaluation.headline = t('coachRetrySimilarHead', { newCoord, origCoord });
+      }
+    }
+
     displayCoachEvaluation(evaluation, true);
     updateWinrateDisplay(g.moves.length);
+  }
+
+  // Clear retry session banner on board once live play resumes beyond that move
+  if (state.retrySession && g.moves.length > state.retrySession.moveNum) {
+    state.retrySession = null;
+    if (el.retryCompareBanner) el.retryCompareBanner.classList.add('hidden');
   }
 
   if (runId !== state.aiRunId) return;
@@ -865,9 +1130,9 @@ function displayCoachEvaluation(ev, allowRetry = true) {
   el.coachGradeBadge.className = `grade-badge grade-${ev.grade}`;
 
   if (ev.winrateDelta < -0.02) {
-    el.coachDelta.textContent = `勝率 ${(ev.winrateDelta * 100).toFixed(1)}%`;
+    el.coachDelta.textContent = t('coachDeltaWr', { delta: (ev.winrateDelta * 100).toFixed(1) });
   } else {
-    el.coachDelta.textContent = '符合推薦';
+    el.coachDelta.textContent = t('coachDeltaMatch');
   }
 
   el.coachHeadline.textContent = ev.headline;
@@ -917,7 +1182,7 @@ async function triggerAiMove(existingRunId = null) {
       scoreLeadBlack: analysis.scoreLeadBlack,
       color: passRes.move.color,
     });
-    showToast(passRes.enteredScoring ? '雙方皆已虛手——請點選死子確認勝負' : '師範 AI 選擇虛手');
+    showToast(passRes.enteredScoring ? t('toastBothPassed') : t('toastAiPassed'));
   } else {
     const bm = analysis.bestMove;
     const res = g.playMove(bm.x, bm.y);
@@ -949,7 +1214,7 @@ async function handleAskSenseiHint() {
   if (g.phase !== 'playing' || state.aiThinking || g.turn !== state.settings.playerColor) return;
 
   el.btnAskHint.disabled = true;
-  el.btnAskHint.textContent = '分析中…';
+  el.btnAskHint.textContent = t('btnAskHintAnalyzing');
 
   const lastMoveIdx = g.moves.length > 0 && !g.moves[g.moves.length - 1].pass
     ? g.moves[g.moves.length - 1].idx
@@ -972,13 +1237,13 @@ async function handleAskSenseiHint() {
   el.btnAskHint.disabled = false;
   el.btnAskHint.innerHTML = `
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    顯示推薦選點（前三手）
+    <span id="btn-ask-hint-label" data-i18n="btnAskHint">${t('btnAskHint')}</span>
   `;
 
   if (analysis.passRecommended || analysis.topMoves.length === 0) {
     state.activeHints = [];
-    el.coachHeadline.textContent = '師範建議：虛手';
-    el.coachExplanation.textContent = '盤面已經定型，現在虛手即可進入點目計分階段。';
+    el.coachHeadline.textContent = t('coachPassHead');
+    el.coachExplanation.textContent = t('coachPassExp');
     el.coachCandidates.classList.add('hidden');
     renderCurrentBoard();
     return;
@@ -997,13 +1262,13 @@ function renderCandidateList(moves) {
   moves.slice(0, 3).forEach((m, i) => {
     const item = document.createElement('div');
     item.className = 'cand-item';
-    item.title = `點擊直接下在 ${m.coord}`;
+    item.title = t('candClickTitle', { coord: m.coord });
     item.innerHTML = `
       <span class="cand-letter c${i}">${letters[i]}</span>
       <div class="cand-details">
         <div class="cand-top">
           <span class="cand-coord">${m.coord}</span>
-          <span class="cand-wr">勝率 ${Math.round(m.playerWinrate * 100)}%</span>
+          <span class="cand-wr">${t('candWr', { pct: Math.round(m.playerWinrate * 100) })}</span>
         </div>
         <div class="cand-reason">${m.reason}</div>
       </div>
@@ -1024,6 +1289,49 @@ function handleUndo(retryMode = false) {
   state.activeHints = [];
   state.reviewIndex = null;
 
+  // If in retry session, clear banner when undoing further or manual undo
+  if (!retryMode && state.retrySession) {
+    state.retrySession = null;
+    if (el.retryCompareBanner) el.retryCompareBanner.classList.add('hidden');
+  }
+
+  // Find the player's last move to record as originalMove for retry mode
+  let playerMoveToRetry = null;
+  for (let i = g.moves.length - 1; i >= 0; i--) {
+    if (g.moves[i].color === state.settings.playerColor) {
+      playerMoveToRetry = g.moves[i];
+      break;
+    }
+  }
+
+  if (retryMode && playerMoveToRetry) {
+    if (!state.retrySession) {
+      state.retrySession = {
+        moveNum: playerMoveToRetry.moveNum,
+        originalMove: {
+          x: playerMoveToRetry.x,
+          y: playerMoveToRetry.y,
+          idx: playerMoveToRetry.idx,
+          color: playerMoveToRetry.color,
+          pass: playerMoveToRetry.pass,
+          analysis: playerMoveToRetry.analysis,
+        },
+        savedOriginalGame: cloneGame(g),
+        savedWinrateHistory: [...state.winrateHistory],
+      };
+    } else {
+      state.retrySession.moveNum = playerMoveToRetry.moveNum;
+      state.retrySession.originalMove = {
+        x: playerMoveToRetry.x,
+        y: playerMoveToRetry.y,
+        idx: playerMoveToRetry.idx,
+        color: playerMoveToRetry.color,
+        pass: playerMoveToRetry.pass,
+        analysis: playerMoveToRetry.analysis,
+      };
+    }
+  }
+
   // Undo back to the player's turn (usually 2 moves if AI already replied, or 1 move if it's AI's turn)
   let steps = 1;
   if (g.turn === state.settings.playerColor && g.moves.length >= 2) {
@@ -1032,12 +1340,17 @@ function handleUndo(retryMode = false) {
   g.undo(steps);
   state.winrateHistory = state.winrateHistory.slice(0, g.moves.length + 1);
 
-  if (retryMode) {
+  if (retryMode && state.retrySession?.originalMove) {
     el.btnRetryMove.classList.add('hidden');
     el.coachGradeRow.classList.add('hidden');
-    el.coachHeadline.textContent = '再試一次——能看出更強的下法嗎？';
-    el.coachExplanation.textContent = '重新檢視局部棋形與急所，或點擊「顯示推薦選點」在棋盤上查看 A/B/C 標記。';
-    showToast('已退回上一手——試試更強的變化！');
+    const origCoord = coordToLabel(state.retrySession.originalMove.x, state.retrySession.originalMove.y, state.game.size);
+    el.coachHeadline.textContent = t('coachRetryHead', { moveNum: state.retrySession.moveNum, coord: origCoord });
+    el.coachExplanation.textContent = t('coachRetryExp', { coord: origCoord });
+    if (el.retryCompareBanner) {
+      el.retryCompareBanner.classList.remove('hidden');
+      el.retryBannerText.textContent = t('retryBannerText', { moveNum: state.retrySession.moveNum, coord: origCoord });
+    }
+    showToast(t('toastRetryBack', { moveNum: state.retrySession.moveNum, coord: origCoord }));
   } else {
     resetCoachMessage();
   }
@@ -1061,11 +1374,11 @@ function handlePass() {
   });
 
   if (res.enteredScoring) {
-    showToast('雙方皆已虛手——請點選死子確認勝負');
+    showToast(t('toastBothPassed'));
     updatePlayUI();
     renderCurrentBoard();
   } else {
-    showToast('您已選擇虛手');
+    showToast(t('toastYouPassed'));
     updatePlayUI();
     renderCurrentBoard();
     triggerAiMove();
@@ -1078,14 +1391,14 @@ function handleResign() {
   state.aiRunId++;
   state.aiThinking = false;
   g.resign(state.settings.playerColor);
-  showToast('您已投子認輸');
+  showToast(t('toastYouResigned'));
   updatePlayUI();
   renderCurrentBoard();
 }
 
 function handleExportSgf() {
   const preset = DIFFICULTY_PRESETS[state.settings.difficulty] || DIFFICULTY_PRESETS.club;
-  const sgf = state.game.exportSGF(state.settings.playerColor, `師範 AI（${preset.rank}）`);
+  const sgf = state.game.exportSGF(state.settings.playerColor, t('sgfAiLabel', { rank: localizeRank(preset.rank) }));
   const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1094,7 +1407,7 @@ function handleExportSgf() {
   a.download = `kaya-sensei-${state.game.size}x${state.game.size}-${dateStr}.sgf`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('已匯出 SGF 棋譜檔案');
+  showToast(t('toastSgfExported'));
 }
 
 // ============================================================================
@@ -1105,7 +1418,7 @@ function updateDojoMasteryBadges() {
   const solvedCount = PUZZLES.filter((p) => state.dojoSolvedSet.has(p.id)).length;
   const total = PUZZLES.length;
   el.dojoBadgeCount.textContent = `${solvedCount}/${total}`;
-  el.dojoMasteryText.textContent = `已精通 ${solvedCount} / ${total} 題`;
+  el.dojoMasteryText.textContent = t('dojoMasteryText', { solved: solvedCount, total });
   el.dojoMasteryFill.style.width = `${Math.round((solvedCount / total) * 100)}%`;
 }
 
@@ -1114,7 +1427,7 @@ function renderDojoCurriculum() {
 
   // Category filter pills
   el.dojoCategoryPills.innerHTML = '';
-  const allCats = [{ id: 'all', name: '全部' }, ...PUZZLE_CATEGORIES];
+  const allCats = [{ id: 'all', name: t('dojoCatAll') }, ...PUZZLE_CATEGORIES.map(getLocalizedCategory)];
   for (const cat of allCats) {
     const btn = document.createElement('button');
     btn.className = `cat-pill ${state.dojoCategory === cat.id ? 'active' : ''}`;
@@ -1128,7 +1441,7 @@ function renderDojoCurriculum() {
 
   // Puzzle list
   el.dojoPuzzleList.innerHTML = '';
-  const filtered = PUZZLES.map((p, idx) => ({ p, idx })).filter(
+  const filtered = PUZZLES.map((p, idx) => ({ p: getLocalizedPuzzle(p), idx })).filter(
     ({ p }) => state.dojoCategory === 'all' || p.category === state.dojoCategory
   );
 
@@ -1154,7 +1467,8 @@ function renderDojoCurriculum() {
 function loadDojoPuzzle(index) {
   const clamped = (index + PUZZLES.length) % PUZZLES.length;
   state.dojoPuzzleIndex = clamped;
-  const puzzle = PUZZLES[clamped];
+  const rawPuzzle = PUZZLES[clamped];
+  const puzzle = getLocalizedPuzzle(rawPuzzle);
 
   const b = new GoBoard(puzzle.size);
   for (const coord of puzzle.setup.black) {
@@ -1167,27 +1481,29 @@ function loadDojoPuzzle(index) {
   }
 
   state.dojoBoard = b;
-  state.dojoNode = puzzle.tree;
+  state.dojoNode = rawPuzzle.tree;
   state.dojoStep = 0;
+  state.dojoPathCoords = [];
   state.dojoStatus = 'playing';
   state.dojoLastMove = null;
   state.dojoHintLevel = 0;
 
   // Populate UI
-  const cat = PUZZLE_CATEGORIES.find((c) => c.id === puzzle.category);
+  const rawCat = PUZZLE_CATEGORIES.find((c) => c.id === puzzle.category);
+  const cat = rawCat ? getLocalizedCategory(rawCat) : null;
   el.dojoCatTag.textContent = cat ? cat.name : puzzle.category;
   el.dojoBoardTitle.textContent = puzzle.title;
   el.dojoRankPill.textContent = puzzle.rank;
   el.dojoSolvedPill.classList.toggle('hidden', !state.dojoSolvedSet.has(puzzle.id));
-  el.dojoStepIndicator.textContent = puzzle.playerColor === BLACK ? '黑先' : '白先';
+  el.dojoStepIndicator.textContent = puzzle.playerColor === BLACK ? t('dojoBlackFirst') : t('dojoWhiteFirst');
 
   el.dojoGoal.textContent = puzzle.goal;
   el.dojoBriefing.textContent = puzzle.briefing;
 
-  setDojoFeedback('neutral', '輪到您落子', '請先在腦中仔細計算變化，再於棋盤上落子。', false);
+  setDojoFeedback('neutral', t('dojoTurnTitle'), t('dojoTurnBody'), false);
 
   el.dojoHintBox.classList.add('hidden');
-  el.dojoHintLabel.textContent = '提示（1/3）';
+  el.dojoHintLabel.textContent = t('dojoHintBtn', { n: 1 });
   el.btnDojoHint.disabled = false;
 
   const alreadySolved = state.dojoSolvedSet.has(puzzle.id);
@@ -1213,13 +1529,14 @@ function handleDojoMove(x, y) {
     return;
   }
 
-  const puzzle = PUZZLES[state.dojoPuzzleIndex];
+  const rawPuzzle = PUZZLES[state.dojoPuzzleIndex];
+  const puzzle = getLocalizedPuzzle(rawPuzzle);
   const coord = coordToLabel(x, y, puzzle.size);
   const res = state.dojoBoard.play(x, y, puzzle.playerColor);
 
   if (!res.legal) {
     sound.playSoftError();
-    showToast(res.reason || '無效落子');
+    showToast(res.reason || t('toastIllegalMove'));
     return;
   }
 
@@ -1230,10 +1547,13 @@ function handleDojoMove(x, y) {
   // Check if move is in current solution tree
   const branch = state.dojoNode ? state.dojoNode[coord] : null;
   if (branch) {
+    state.dojoPathCoords.push(coord);
+    const msg = getLocalizedBranchMessage(rawPuzzle, state.dojoPathCoords, branch.message);
+
     // Clear exact hint markers once user advances
     if (state.dojoHintLevel >= 2) {
       state.dojoHintLevel = 0;
-      el.dojoHintLabel.textContent = '提示（1/3）';
+      el.dojoHintLabel.textContent = t('dojoHintBtn', { n: 1 });
     }
 
     if (branch.status === 'solved') {
@@ -1244,7 +1564,7 @@ function handleDojoMove(x, y) {
       el.dojoSolvedPill.classList.remove('hidden');
       el.dojoTakeawayBox.classList.remove('hidden');
       el.dojoTakeawayText.textContent = puzzle.takeaway;
-      setDojoFeedback('solved', '✓ 挑戰成功！', branch.message, false);
+      setDojoFeedback('solved', t('dojoSolvedTitle'), msg, false);
       renderDojoCurriculum();
       renderCurrentBoard();
       return;
@@ -1252,7 +1572,7 @@ function handleDojoMove(x, y) {
 
     // Multi-move continuation: opponent plays strongest resistance
     state.dojoStatus = 'animating';
-    setDojoFeedback('continue', '好手——請繼續下完後續變化！', branch.message, false);
+    setDojoFeedback('continue', t('dojoContinueTitle'), msg, false);
 
     setTimeout(() => {
       if (state.mode !== 'dojo' || PUZZLES[state.dojoPuzzleIndex].id !== puzzle.id) return;
@@ -1273,10 +1593,11 @@ function handleDojoMove(x, y) {
   }
 
   // Check if it's a known instructional trap at step 0
-  const trap = state.dojoStep === 0 && puzzle.traps ? puzzle.traps[coord] : null;
+  const trap = state.dojoStep === 0 && rawPuzzle.traps ? rawPuzzle.traps[coord] : null;
   state.dojoStatus = 'animating';
 
   if (trap) {
+    const trapMsg = getLocalizedTrapMessage(rawPuzzle, coord, trap.message);
     setTimeout(() => {
       if (state.mode !== 'dojo' || PUZZLES[state.dojoPuzzleIndex].id !== puzzle.id) return;
       if (trap.reply) {
@@ -1289,7 +1610,7 @@ function handleDojoMove(x, y) {
       }
       state.dojoStatus = 'wrong';
       sound.playSoftError();
-      setDojoFeedback('wrong', `遭到反擊（${coord}）`, trap.message, true);
+      setDojoFeedback('wrong', t('dojoWrongTrapTitle', { coord }), trapMsg, true);
       renderCurrentBoard();
     }, 320);
   } else {
@@ -1297,8 +1618,8 @@ function handleDojoMove(x, y) {
     sound.playSoftError();
     setDojoFeedback(
       'wrong',
-      `未能擊中急所（${coord}）`,
-      '這手棋偏離了此題的核心思路。點選「再試一次」重新計算，或按「提示」請師範點撥！',
+      t('dojoWrongOtherTitle', { coord }),
+      t('dojoWrongOtherBody'),
       true
     );
   }
@@ -1308,7 +1629,7 @@ function handleDojoHint() {
   if (state.dojoStatus !== 'playing') {
     loadDojoPuzzle(state.dojoPuzzleIndex);
   }
-  const puzzle = PUZZLES[state.dojoPuzzleIndex];
+  const puzzle = getLocalizedPuzzle(PUZZLES[state.dojoPuzzleIndex]);
   state.dojoHintLevel = Math.min(3, state.dojoHintLevel + 1);
 
   const hintEntry = puzzle.hints[state.dojoHintLevel - 1];
@@ -1318,10 +1639,10 @@ function handleDojoHint() {
   el.dojoHintText.textContent = hintText;
 
   if (state.dojoHintLevel >= 3) {
-    el.dojoHintLabel.textContent = '已標示正解急所';
+    el.dojoHintLabel.textContent = t('dojoHintDone');
     el.btnDojoHint.disabled = true;
   } else {
-    el.dojoHintLabel.textContent = `提示（${state.dojoHintLevel + 1}/3）`;
+    el.dojoHintLabel.textContent = t('dojoHintBtn', { n: state.dojoHintLevel + 1 });
   }
 
   renderCurrentBoard();
@@ -1476,6 +1797,41 @@ el.toggleCoach.addEventListener('change', () => {
 el.btnAskHint.addEventListener('click', handleAskSenseiHint);
 el.btnRetryMove.addEventListener('click', () => handleUndo(true));
 
+// Retry Banner actions
+if (el.btnShowHintsRetry) {
+  el.btnShowHintsRetry.addEventListener('click', handleAskSenseiHint);
+}
+if (el.btnRestoreOriginalMove) {
+  el.btnRestoreOriginalMove.addEventListener('click', restoreOriginalGame);
+}
+
+// Problem Review Card actions
+if (el.btnPrevProblem) {
+  el.btnPrevProblem.addEventListener('click', () => {
+    if (state.problemReviewIndex > 0) {
+      startProblemReview(state.problemReviewIndex - 1);
+    }
+  });
+}
+if (el.btnNextProblem) {
+  el.btnNextProblem.addEventListener('click', () => {
+    if (state.problemReviewIndex < state.problemReviewList.length - 1) {
+      startProblemReview(state.problemReviewIndex + 1);
+    }
+  });
+}
+if (el.btnPracticeCurrentProblem) {
+  el.btnPracticeCurrentProblem.addEventListener('click', () => {
+    if (state.problemReviewIndex >= 0 && state.problemReviewList[state.problemReviewIndex]) {
+      const prob = state.problemReviewList[state.problemReviewIndex];
+      practiceFromMove(prob.moveNum);
+    }
+  });
+}
+if (el.btnExitProblemReview) {
+  el.btnExitProblemReview.addEventListener('click', exitProblemReview);
+}
+
 // Scoring controls
 el.ruleChinese.addEventListener('click', () => {
   state.settings.rules = 'chinese';
@@ -1501,7 +1857,7 @@ el.btnResumePlay.addEventListener('click', () => {
   state.game.resumePlaying();
   updatePlayUI();
   renderCurrentBoard();
-  showToast('已恢復對弈');
+  showToast(t('toastResumed'));
 });
 
 // Dojo toolbar
@@ -1510,6 +1866,48 @@ el.btnDojoTryAgain.addEventListener('click', () => loadDojoPuzzle(state.dojoPuzz
 el.btnDojoHint.addEventListener('click', handleDojoHint);
 el.btnDojoPrev.addEventListener('click', () => loadDojoPuzzle(state.dojoPuzzleIndex - 1));
 el.btnDojoNext.addEventListener('click', () => loadDojoPuzzle(state.dojoPuzzleIndex + 1));
+
+// Language Selector
+function applyLanguage(lang) {
+  const validLang = setLang(lang);
+  state.settings.language = validLang;
+  persistSettings();
+  if (el.langSelect) {
+    el.langSelect.value = validLang;
+  }
+  applyDomTranslations();
+  updateDojoMasteryBadges();
+
+  // Refresh active view
+  if (state.game) {
+    updatePlayUI();
+    if (state.retrySession && state.retrySession.originalMove && el.retryCompareBanner && !el.retryCompareBanner.classList.contains('hidden')) {
+      const origCoord = coordToLabel(state.retrySession.originalMove.x, state.retrySession.originalMove.y, state.game.size);
+      el.retryBannerText.textContent = t('retryBannerText', { moveNum: state.retrySession.moveNum, coord: origCoord });
+      el.coachHeadline.textContent = t('coachRetryHead', { moveNum: state.retrySession.moveNum, coord: origCoord });
+      el.coachExplanation.textContent = t('coachRetryExp', { coord: origCoord });
+    } else if (state.game.moves.length === 0) {
+      resetCoachMessage();
+    }
+    if (state.problemReviewIndex >= 0 && state.problemReviewList.length > 0) {
+      startProblemReview(state.problemReviewIndex);
+    }
+  }
+  if (state.mode === 'dojo') {
+    loadDojoPuzzle(state.dojoPuzzleIndex);
+  }
+  if (typeof neuralEngine.getSnapshot === 'function') {
+    updateNeuralUI(neuralEngine.getSnapshot(), true);
+  }
+  renderCurrentBoard();
+}
+
+if (el.langSelect) {
+  el.langSelect.value = state.settings.language;
+  el.langSelect.addEventListener('change', () => {
+    applyLanguage(el.langSelect.value);
+  });
+}
 
 // Keyboard shortcuts
 window.addEventListener('keydown', (ev) => {
@@ -1541,21 +1939,21 @@ window.addEventListener('keydown', (ev) => {
 // Neural Network Engine Card Controls (ONNX WebGPU / WASM)
 // ============================================================================
 
-function updateNeuralUI(snap) {
+function updateNeuralUI(snap, silent = false) {
   const { status, backend, modelName, lastError, progress } = snap;
 
   el.nnStatusBadge.className = `nn-badge ${status}`;
   if (status === 'idle') {
-    el.nnStatusBadge.textContent = '內建引擎';
+    el.nnStatusBadge.textContent = t('nnBadgeIdle');
     el.nnProgressWrap.classList.add('hidden');
     el.nnErrorMsg.classList.add('hidden');
     el.btnNnLoad.classList.remove('hidden');
     el.btnNnLoad.disabled = false;
     el.btnNnFile.disabled = false;
     el.btnNnUnload.classList.add('hidden');
-    el.nnActiveInfo.textContent = '初次載入後自動快取於瀏覽器，支援 GitHub Pages 零伺服器部署。';
+    el.nnActiveInfo.textContent = t('nnNoteDefault');
   } else if (status === 'loading') {
-    el.nnStatusBadge.textContent = '載入中…';
+    el.nnStatusBadge.textContent = t('nnBadgeLoading');
     el.nnProgressWrap.classList.remove('hidden');
     el.nnErrorMsg.classList.add('hidden');
     el.btnNnLoad.disabled = true;
@@ -1564,38 +1962,38 @@ function updateNeuralUI(snap) {
 
     if (progress) {
       if (progress.phase === 'cache') {
-        el.nnProgressText.textContent = '從瀏覽器快取讀取模型…';
+        el.nnProgressText.textContent = t('nnProgCache');
         el.nnProgressPct.textContent = '100%';
         el.nnProgressFill.style.width = '100%';
       } else if (progress.phase === 'compile') {
-        el.nnProgressText.textContent = '正在編譯 WebGPU / WASM 運算圖…';
+        el.nnProgressText.textContent = t('nnProgInit');
         el.nnProgressPct.textContent = '100%';
         el.nnProgressFill.style.width = '100%';
       } else {
         const mbStr = progress.loadedMB > 0
-          ? `（${progress.loadedMB.toFixed(1)}${progress.totalMB > 0 ? ` / ${progress.totalMB.toFixed(1)}` : ''} MB）`
+          ? ` (${progress.loadedMB.toFixed(1)}${progress.totalMB > 0 ? ` / ${progress.totalMB.toFixed(1)}` : ''} MB)`
           : '';
-        el.nnProgressText.textContent = `下載並快取模型中${mbStr}…`;
+        el.nnProgressText.textContent = t('nnProgDownload', { mb: mbStr });
         const pct = progress.pct >= 0 ? progress.pct : 55;
-        el.nnProgressPct.textContent = progress.pct >= 0 ? `${pct}%` : '下載中';
+        el.nnProgressPct.textContent = progress.pct >= 0 ? `${pct}%` : t('nnProgDownloading');
         el.nnProgressFill.style.width = `${pct}%`;
       }
     }
   } else if (status === 'ready') {
-    const backendLabel = backend === 'webgpu' ? 'WebGPU GPU 加速' : 'WASM CPU 運行';
+    const backendLabel = backend === 'webgpu' ? t('nnBackendWebgpu') : t('nnBackendWasm');
     el.nnStatusBadge.textContent = backendLabel;
     el.nnProgressWrap.classList.add('hidden');
     el.nnErrorMsg.classList.add('hidden');
     el.btnNnLoad.classList.add('hidden');
     el.btnNnFile.disabled = false;
     el.btnNnUnload.classList.remove('hidden');
-    el.nnActiveInfo.textContent = `已啟用：${modelName}（${backendLabel}）。AI 對手、教練選點與形勢圖均由神經網路驅動！`;
-    showToast(`已啟用神經網路 AI（${backendLabel}）`);
+    el.nnActiveInfo.textContent = t('nnActiveInfo', { name: modelName, backend: backendLabel });
+    if (!silent) showToast(t('nnToastReady', { backend: backendLabel }));
   } else if (status === 'error') {
-    el.nnStatusBadge.textContent = '載入失敗';
+    el.nnStatusBadge.textContent = t('nnBadgeError');
     el.nnProgressWrap.classList.add('hidden');
     el.nnErrorMsg.classList.remove('hidden');
-    el.nnErrorMsg.textContent = `無法載入模型：${lastError || '未知錯誤'}。已自動維持使用內建引擎。`;
+    el.nnErrorMsg.textContent = t('nnErrLoad', { err: lastError || t('nnErrUnknown') });
     el.btnNnLoad.classList.remove('hidden');
     el.btnNnLoad.disabled = false;
     el.btnNnFile.disabled = false;
@@ -1619,15 +2017,15 @@ el.btnNnLoad.addEventListener('click', async () => {
     url = el.nnCustomUrl.value.trim();
     if (!url) {
       el.nnErrorMsg.classList.remove('hidden');
-      el.nnErrorMsg.textContent = '請先輸入有效的 .onnx 模型網址。';
+      el.nnErrorMsg.textContent = t('nnErrInvalidUrl');
       return;
     }
-    name = url.split('/').pop() || '自訂 ONNX 模型';
+    name = url.split('/').pop() || t('nnCustomModelName');
   } else {
     const preset = NN_MODEL_PRESETS.find((p) => p.id === val);
     if (!preset) return;
     url = preset.url;
-    name = preset.name;
+    name = preset.id === 'repo-local' ? t('nnOptRepo') : t('nnOptHf');
   }
   try {
     await neuralEngine.loadFromUrl(url, name);
@@ -1655,13 +2053,17 @@ el.btnNnUnload.addEventListener('click', () => {
   neuralEngine.unload();
   state.latestOwnershipMap = null;
   renderCurrentBoard();
-  showToast('已切換回內建輕量引擎');
+  showToast(t('nnToastUnloaded'));
 });
 
 // ============================================================================
 // Initialize App
 // ============================================================================
 
+applyDomTranslations();
+if (el.langSelect) {
+  el.langSelect.value = state.settings.language;
+}
 computeBoardSize();
 updateDojoMasteryBadges();
 startNewGame();
