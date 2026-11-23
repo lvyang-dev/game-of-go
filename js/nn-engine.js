@@ -14,16 +14,22 @@ const MODEL_CACHE_NAME = 'kaya-sensei-onnx-v1';
 // or paste any HTTPS Hugging Face / custom .onnx URL, or load a local .onnx file)
 export const NN_MODEL_PRESETS = [
   {
-    id: 'repo-local',
-    name: '專案內建模型（./models/katago.onnx）',
-    url: './models/katago.onnx',
-    note: '適合 GitHub Pages：將 .onnx 放入 models/ 資料夾即可自動載入。',
+    id: 'hf-kaya-uint8',
+    name: 'KataGo b28c512 UINT8（Hugging Face · ~72 MB 推薦）',
+    url: 'https://huggingface.co/kaya-go/kaya/resolve/main/kata1-b28c512nbt-adam-s11165M-d5387M/kata1-b28c512nbt-adam-s11165M-d5387M.uint8.onnx',
+    note: '量化輕量版（約 72 MB），支援 WebGPU 與 WASM，初次下載後自動快取於瀏覽器。',
   },
   {
     id: 'hf-kaya-fp16',
-    name: 'KataGo b28c512 FP16（Hugging Face · 強職業級）',
-    url: 'https://huggingface.co/kaya-go/kaya/resolve/main/kata1-b28c512nbt-adam-s11165M-d5387M.fp16.onnx',
-    note: '需要較多記憶體與 WebGPU；初次下載後自動快取於瀏覽器。',
+    name: 'KataGo b28c512 FP16（Hugging Face · ~140 MB WebGPU）',
+    url: 'https://huggingface.co/kaya-go/kaya/resolve/main/kata1-b28c512nbt-adam-s11165M-d5387M/kata1-b28c512nbt-adam-s11165M-d5387M.fp16.onnx',
+    note: '半精度版（約 140 MB），適合具備 WebGPU 的桌機瀏覽器；初次下載後自動快取。',
+  },
+  {
+    id: 'repo-local',
+    name: '專案內建模型（./models/katago.onnx）',
+    url: './models/katago.onnx',
+    note: '適合自架 GitHub Pages：將 .onnx 放入 models/ 資料夾即可自動載入。',
   },
 ];
 

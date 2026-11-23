@@ -1897,8 +1897,9 @@ html[lang="en"] body {
 
             <div id="nn-controls" class="nn-controls">
               <select id="nn-preset-select" class="select-input nn-select" aria-label="選擇 ONNX 模型來源" data-i18n-aria="ariaNnSelect">
+                <option value="hf-kaya-uint8" data-i18n="nnOptHfUint8">KataGo b28c512 UINT8（Hugging Face · ~72 MB 推薦）</option>
+                <option value="hf-kaya-fp16" data-i18n="nnOptHf">KataGo b28c512 FP16（Hugging Face · ~140 MB）</option>
                 <option value="repo-local" data-i18n="nnOptRepo">專案內建模型（./models/katago.onnx）</option>
-                <option value="hf-kaya-fp16" data-i18n="nnOptHf">KataGo b28c512 FP16（Hugging Face）</option>
                 <option value="custom" data-i18n="nnOptCustom">自訂 HTTPS 模型網址…</option>
               </select>
 
@@ -2655,13 +2656,17 @@ const STRINGS = {
   nnBadgeLoading: { zhTW: '載入中…', en: 'Loading…' },
   nnBadgeError: { zhTW: '載入失敗', en: 'Load Failed' },
   ariaNnSelect: { zhTW: '選擇 ONNX 模型來源', en: 'Select ONNX model source' },
+  nnOptHfUint8: {
+    zhTW: 'KataGo b28c512 UINT8（Hugging Face · ~72 MB 推薦）',
+    en: 'KataGo b28c512 UINT8 (Hugging Face · ~72 MB)',
+  },
+  nnOptHf: {
+    zhTW: 'KataGo b28c512 FP16（Hugging Face · ~140 MB）',
+    en: 'KataGo b28c512 FP16 (Hugging Face · ~140 MB)',
+  },
   nnOptRepo: {
     zhTW: '專案內建模型（./models/katago.onnx）',
     en: 'Repo Model (./models/katago.onnx)',
-  },
-  nnOptHf: {
-    zhTW: 'KataGo b28c512 FP16（Hugging Face）',
-    en: 'KataGo b28c512 FP16 (Hugging Face)',
   },
   nnOptCustom: {
     zhTW: '自訂 HTTPS 模型網址…',
@@ -4500,16 +4505,22 @@ const MODEL_CACHE_NAME = 'kaya-sensei-onnx-v1';
 // or paste any HTTPS Hugging Face / custom .onnx URL, or load a local .onnx file)
 const NN_MODEL_PRESETS = [
   {
-    id: 'repo-local',
-    name: '專案內建模型（./models/katago.onnx）',
-    url: './models/katago.onnx',
-    note: '適合 GitHub Pages：將 .onnx 放入 models/ 資料夾即可自動載入。',
+    id: 'hf-kaya-uint8',
+    name: 'KataGo b28c512 UINT8（Hugging Face · ~72 MB 推薦）',
+    url: 'https://huggingface.co/kaya-go/kaya/resolve/main/kata1-b28c512nbt-adam-s11165M-d5387M/kata1-b28c512nbt-adam-s11165M-d5387M.uint8.onnx',
+    note: '量化輕量版（約 72 MB），支援 WebGPU 與 WASM，初次下載後自動快取於瀏覽器。',
   },
   {
     id: 'hf-kaya-fp16',
-    name: 'KataGo b28c512 FP16（Hugging Face · 強職業級）',
-    url: 'https://huggingface.co/kaya-go/kaya/resolve/main/kata1-b28c512nbt-adam-s11165M-d5387M.fp16.onnx',
-    note: '需要較多記憶體與 WebGPU；初次下載後自動快取於瀏覽器。',
+    name: 'KataGo b28c512 FP16（Hugging Face · ~140 MB WebGPU）',
+    url: 'https://huggingface.co/kaya-go/kaya/resolve/main/kata1-b28c512nbt-adam-s11165M-d5387M/kata1-b28c512nbt-adam-s11165M-d5387M.fp16.onnx',
+    note: '半精度版（約 140 MB），適合具備 WebGPU 的桌機瀏覽器；初次下載後自動快取。',
+  },
+  {
+    id: 'repo-local',
+    name: '專案內建模型（./models/katago.onnx）',
+    url: './models/katago.onnx',
+    note: '適合自架 GitHub Pages：將 .onnx 放入 models/ 資料夾即可自動載入。',
   },
 ];
 
@@ -9649,7 +9660,12 @@ el.btnNnLoad.addEventListener('click', async () => {
     const preset = NN_MODEL_PRESETS.find((p) => p.id === val);
     if (!preset) return;
     url = preset.url;
-    name = preset.id === 'repo-local' ? t('nnOptRepo') : t('nnOptHf');
+    const presetKeyMap = {
+      'hf-kaya-uint8': 'nnOptHfUint8',
+      'hf-kaya-fp16': 'nnOptHf',
+      'repo-local': 'nnOptRepo',
+    };
+    name = presetKeyMap[preset.id] ? t(presetKeyMap[preset.id]) : preset.name;
   }
   try {
     await neuralEngine.loadFromUrl(url, name);

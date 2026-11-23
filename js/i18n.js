@@ -575,13 +575,17 @@ const STRINGS = {
   nnBadgeLoading: { zhTW: '載入中…', en: 'Loading…' },
   nnBadgeError: { zhTW: '載入失敗', en: 'Load Failed' },
   ariaNnSelect: { zhTW: '選擇 ONNX 模型來源', en: 'Select ONNX model source' },
+  nnOptHfUint8: {
+    zhTW: 'KataGo b28c512 UINT8（Hugging Face · ~72 MB 推薦）',
+    en: 'KataGo b28c512 UINT8 (Hugging Face · ~72 MB)',
+  },
+  nnOptHf: {
+    zhTW: 'KataGo b28c512 FP16（Hugging Face · ~140 MB）',
+    en: 'KataGo b28c512 FP16 (Hugging Face · ~140 MB)',
+  },
   nnOptRepo: {
     zhTW: '專案內建模型（./models/katago.onnx）',
     en: 'Repo Model (./models/katago.onnx)',
-  },
-  nnOptHf: {
-    zhTW: 'KataGo b28c512 FP16（Hugging Face）',
-    en: 'KataGo b28c512 FP16 (Hugging Face)',
   },
   nnOptCustom: {
     zhTW: '自訂 HTTPS 模型網址…',

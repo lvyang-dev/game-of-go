@@ -2025,7 +2025,12 @@ el.btnNnLoad.addEventListener('click', async () => {
     const preset = NN_MODEL_PRESETS.find((p) => p.id === val);
     if (!preset) return;
     url = preset.url;
-    name = preset.id === 'repo-local' ? t('nnOptRepo') : t('nnOptHf');
+    const presetKeyMap = {
+      'hf-kaya-uint8': 'nnOptHfUint8',
+      'hf-kaya-fp16': 'nnOptHf',
+      'repo-local': 'nnOptRepo',
+    };
+    name = presetKeyMap[preset.id] ? t(presetKeyMap[preset.id]) : preset.name;
   }
   try {
     await neuralEngine.loadFromUrl(url, name);

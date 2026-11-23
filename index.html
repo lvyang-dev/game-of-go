@@ -286,8 +286,9 @@
 
             <div id="nn-controls" class="nn-controls">
               <select id="nn-preset-select" class="select-input nn-select" aria-label="選擇 ONNX 模型來源" data-i18n-aria="ariaNnSelect">
+                <option value="hf-kaya-uint8" data-i18n="nnOptHfUint8">KataGo b28c512 UINT8（Hugging Face · ~72 MB 推薦）</option>
+                <option value="hf-kaya-fp16" data-i18n="nnOptHf">KataGo b28c512 FP16（Hugging Face · ~140 MB）</option>
                 <option value="repo-local" data-i18n="nnOptRepo">專案內建模型（./models/katago.onnx）</option>
-                <option value="hf-kaya-fp16" data-i18n="nnOptHf">KataGo b28c512 FP16（Hugging Face）</option>
                 <option value="custom" data-i18n="nnOptCustom">自訂 HTTPS 模型網址…</option>
               </select>
 
