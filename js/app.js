@@ -59,6 +59,9 @@ const state = {
     coachEnabled: true,
     rules: 'chinese',
     language: DEFAULT_LANG,
+    nnPreset: 'hf-kaya-uint8',
+    nnCustomUrl: '',
+    nnAutoLoad: false,
   },
 
   // Play mode runtime
@@ -124,6 +127,16 @@ try {
     }
     if (SUPPORTED_LANGS.includes(savedSettings.language)) {
       state.settings.language = savedSettings.language;
+    }
+    const validPresets = [...NN_MODEL_PRESETS.map((p) => p.id), 'custom'];
+    if (validPresets.includes(savedSettings.nnPreset)) {
+      state.settings.nnPreset = savedSettings.nnPreset;
+    }
+    if (typeof savedSettings.nnCustomUrl === 'string') {
+      state.settings.nnCustomUrl = savedSettings.nnCustomUrl;
+    }
+    if (typeof savedSettings.nnAutoLoad === 'boolean') {
+      state.settings.nnAutoLoad = savedSettings.nnAutoLoad;
     }
   }
 } catch {
@@ -2004,12 +2017,20 @@ function updateNeuralUI(snap, silent = false) {
 neuralEngine.subscribe(updateNeuralUI);
 
 el.nnPresetSelect.addEventListener('change', () => {
-  const isCustom = el.nnPresetSelect.value === 'custom';
+  const val = el.nnPresetSelect.value;
+  state.settings.nnPreset = val;
+  persistSettings();
+  const isCustom = val === 'custom';
   el.nnCustomUrl.classList.toggle('hidden', !isCustom);
   el.nnErrorMsg.classList.add('hidden');
 });
 
-el.btnNnLoad.addEventListener('click', async () => {
+el.nnCustomUrl.addEventListener('change', () => {
+  state.settings.nnCustomUrl = el.nnCustomUrl.value.trim();
+  persistSettings();
+});
+
+async function loadSelectedNeuralNet() {
   const val = el.nnPresetSelect.value;
   let url = '';
   let name = '';
@@ -2020,6 +2041,7 @@ el.btnNnLoad.addEventListener('click', async () => {
       el.nnErrorMsg.textContent = t('nnErrInvalidUrl');
       return;
     }
+    state.settings.nnCustomUrl = url;
     name = url.split('/').pop() || t('nnCustomModelName');
   } else {
     const preset = NN_MODEL_PRESETS.find((p) => p.id === val);
@@ -2032,12 +2054,18 @@ el.btnNnLoad.addEventListener('click', async () => {
     };
     name = presetKeyMap[preset.id] ? t(presetKeyMap[preset.id]) : preset.name;
   }
+  state.settings.nnPreset = val;
+  persistSettings();
   try {
     await neuralEngine.loadFromUrl(url, name);
+    state.settings.nnAutoLoad = true;
+    persistSettings();
   } catch {
     // Error already displayed via subscribe handler
   }
-});
+}
+
+el.btnNnLoad.addEventListener('click', loadSelectedNeuralNet);
 
 el.btnNnFile.addEventListener('click', () => {
   el.inputNnFile.value = '';
@@ -2049,6 +2077,9 @@ el.inputNnFile.addEventListener('change', async () => {
   if (!file) return;
   try {
     await neuralEngine.loadFromFile(file);
+    // Local file handles cannot be re-opened automatically across reloads
+    state.settings.nnAutoLoad = false;
+    persistSettings();
   } catch {
     // Error already displayed via subscribe handler
   }
@@ -2056,6 +2087,8 @@ el.inputNnFile.addEventListener('change', async () => {
 
 el.btnNnUnload.addEventListener('click', () => {
   neuralEngine.unload();
+  state.settings.nnAutoLoad = false;
+  persistSettings();
   state.latestOwnershipMap = null;
   renderCurrentBoard();
   showToast(t('nnToastUnloaded'));
@@ -2069,6 +2102,16 @@ applyDomTranslations();
 if (el.langSelect) {
   el.langSelect.value = state.settings.language;
 }
+if (el.nnPresetSelect) {
+  el.nnPresetSelect.value = state.settings.nnPreset;
+  el.nnCustomUrl.value = state.settings.nnCustomUrl || '';
+  el.nnCustomUrl.classList.toggle('hidden', state.settings.nnPreset !== 'custom');
+}
 computeBoardSize();
 updateDojoMasteryBadges();
 startNewGame();
+
+// Auto-restore cached neural net if the user previously enabled one
+if (state.settings.nnAutoLoad) {
+  loadSelectedNeuralNet();
+}
