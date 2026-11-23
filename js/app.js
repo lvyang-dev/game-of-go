@@ -26,8 +26,10 @@ import {
 import { PUZZLE_CATEGORIES, PUZZLES } from './puzzles.js';
 import { GobanRenderer } from './board-renderer.js';
 import { sound } from './audio.js';
+import { neuralEngine, NN_MODEL_PRESETS } from './nn-engine.js';
 
 const STORAGE_SOLVED_KEY = 'kaya_sensei_solved_v1';
+const STORAGE_SETTINGS_KEY = 'kaya_sensei_settings_v1';
 
 // ============================================================================
 // Application State
@@ -56,6 +58,7 @@ const state = {
   showTerritory: false,
   showAtari: true,
   showNumbers: false,
+  latestOwnershipMap: null,
   winrateHistory: [], // [{ moveNum, blackWinrate, scoreLeadBlack, grade?, color? }]
   lastUserMoveNum: null,
 
@@ -71,7 +74,7 @@ const state = {
   dojoSolvedSet: new Set(),
 };
 
-// Load saved Dojo progress
+// Load saved Dojo progress & last game settings
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_SOLVED_KEY) || '[]');
   if (Array.isArray(saved)) {
@@ -81,9 +84,41 @@ try {
   // Ignore storage errors
 }
 
+try {
+  const savedSettings = JSON.parse(localStorage.getItem(STORAGE_SETTINGS_KEY) || 'null');
+  if (savedSettings && typeof savedSettings === 'object') {
+    if ([9, 13, 19].includes(savedSettings.size)) state.settings.size = savedSettings.size;
+    if (savedSettings.difficulty && DIFFICULTY_PRESETS[savedSettings.difficulty]) {
+      state.settings.difficulty = savedSettings.difficulty;
+    }
+    if (savedSettings.playerColor === BLACK || savedSettings.playerColor === WHITE) {
+      state.settings.playerColor = savedSettings.playerColor;
+    }
+    if (typeof savedSettings.handicap === 'number' && savedSettings.handicap >= 0 && savedSettings.handicap <= 9) {
+      state.settings.handicap = savedSettings.handicap;
+    }
+    if (typeof savedSettings.coachEnabled === 'boolean') {
+      state.settings.coachEnabled = savedSettings.coachEnabled;
+    }
+    if (savedSettings.rules === 'chinese' || savedSettings.rules === 'japanese') {
+      state.settings.rules = savedSettings.rules;
+    }
+  }
+} catch {
+  // Ignore storage errors
+}
+
 function persistSolved() {
   try {
     localStorage.setItem(STORAGE_SOLVED_KEY, JSON.stringify([...state.dojoSolvedSet]));
+  } catch {
+    // Ignore
+  }
+}
+
+function persistSettings() {
+  try {
+    localStorage.setItem(STORAGE_SETTINGS_KEY, JSON.stringify(state.settings));
   } catch {
     // Ignore
   }
@@ -206,6 +241,21 @@ const el = {
   btnStartGame: document.getElementById('btn-start-game'),
   selectHandicap: document.getElementById('select-handicap'),
   modalCoachToggle: document.getElementById('modal-coach-toggle'),
+
+  // Neural Network Engine Card
+  nnStatusBadge: document.getElementById('nn-status-badge'),
+  nnPresetSelect: document.getElementById('nn-preset-select'),
+  nnCustomUrl: document.getElementById('nn-custom-url'),
+  nnProgressWrap: document.getElementById('nn-progress-wrap'),
+  nnProgressText: document.getElementById('nn-progress-text'),
+  nnProgressPct: document.getElementById('nn-progress-pct'),
+  nnProgressFill: document.getElementById('nn-progress-fill'),
+  nnErrorMsg: document.getElementById('nn-error-msg'),
+  btnNnLoad: document.getElementById('btn-nn-load'),
+  btnNnFile: document.getElementById('btn-nn-file'),
+  btnNnUnload: document.getElementById('btn-nn-unload'),
+  inputNnFile: document.getElementById('input-nn-file'),
+  nnActiveInfo: document.getElementById('nn-active-info'),
 };
 
 const renderer = new GobanRenderer(el.canvas);
@@ -280,7 +330,9 @@ function renderCurrentBoard() {
       const sc = calculateScore(board, state.game.komi, state.game.deadStones, state.settings.rules);
       territoryMap = sc.territoryMap;
     } else if (state.showTerritory) {
-      influenceMap = estimateInfluence(board);
+      influenceMap = (isLive && state.latestOwnershipMap && state.latestOwnershipMap.length === board.size * board.size)
+        ? state.latestOwnershipMap
+        : estimateInfluence(board);
     }
 
     const canHover = isLive && state.game.phase === 'playing' && !state.aiThinking && state.game.turn === state.settings.playerColor;
@@ -380,11 +432,13 @@ function switchMode(newMode) {
 function startNewGame(customSettings = null) {
   if (customSettings) {
     Object.assign(state.settings, customSettings);
+    persistSettings();
   }
   state.aiRunId++;
   state.aiThinking = false;
   state.reviewIndex = null;
   state.activeHints = [];
+  state.latestOwnershipMap = null;
   state.lastUserMoveNum = null;
 
   state.game = new GoGame({
@@ -842,6 +896,8 @@ async function triggerAiMove(existingRunId = null) {
 
   const analysis = await analyzePositionAsync(g.board, g.turn, {
     komi: g.komi,
+    rules: state.settings.rules,
+    recentMoves: g.moves.slice(-5),
     lastMoveIdx,
     superkoSet: g.positionHashes,
     difficulty: state.settings.difficulty,
@@ -849,6 +905,9 @@ async function triggerAiMove(existingRunId = null) {
 
   if (runId !== state.aiRunId) return;
   state.aiThinking = false;
+  if (analysis.ownershipMap) {
+    state.latestOwnershipMap = analysis.ownershipMap;
+  }
 
   if (analysis.passRecommended || !analysis.bestMove) {
     const passRes = g.playPass();
@@ -898,12 +957,17 @@ async function handleAskSenseiHint() {
 
   const analysis = await analyzePositionAsync(g.board, g.turn, {
     komi: g.komi,
+    rules: state.settings.rules,
+    recentMoves: g.moves.slice(-5),
     lastMoveIdx,
     superkoSet: g.positionHashes,
     difficulty: 'club',
     customSimulations: g.size === 9 ? 360 : g.size === 13 ? 220 : 120,
     customTimeBudgetMs: 420,
   });
+  if (analysis.ownershipMap) {
+    state.latestOwnershipMap = analysis.ownershipMap;
+  }
 
   el.btnAskHint.disabled = false;
   el.btnAskHint.innerHTML = `
@@ -1406,6 +1470,7 @@ el.btnToggleNumbers.addEventListener('click', () => {
 // Coach actions
 el.toggleCoach.addEventListener('change', () => {
   state.settings.coachEnabled = el.toggleCoach.checked;
+  persistSettings();
   syncCoachVisibility();
 });
 el.btnAskHint.addEventListener('click', handleAskSenseiHint);
@@ -1415,12 +1480,14 @@ el.btnRetryMove.addEventListener('click', () => handleUndo(true));
 el.ruleChinese.addEventListener('click', () => {
   state.settings.rules = 'chinese';
   state.game.rules = 'chinese';
+  persistSettings();
   updatePlayUI();
   renderCurrentBoard();
 });
 el.ruleJapanese.addEventListener('click', () => {
   state.settings.rules = 'japanese';
   state.game.rules = 'japanese';
+  persistSettings();
   updatePlayUI();
   renderCurrentBoard();
 });
@@ -1468,6 +1535,127 @@ window.addEventListener('keydown', (ev) => {
       handleDojoHint();
     }
   }
+});
+
+// ============================================================================
+// Neural Network Engine Card Controls (ONNX WebGPU / WASM)
+// ============================================================================
+
+function updateNeuralUI(snap) {
+  const { status, backend, modelName, lastError, progress } = snap;
+
+  el.nnStatusBadge.className = `nn-badge ${status}`;
+  if (status === 'idle') {
+    el.nnStatusBadge.textContent = '內建引擎';
+    el.nnProgressWrap.classList.add('hidden');
+    el.nnErrorMsg.classList.add('hidden');
+    el.btnNnLoad.classList.remove('hidden');
+    el.btnNnLoad.disabled = false;
+    el.btnNnFile.disabled = false;
+    el.btnNnUnload.classList.add('hidden');
+    el.nnActiveInfo.textContent = '初次載入後自動快取於瀏覽器，支援 GitHub Pages 零伺服器部署。';
+  } else if (status === 'loading') {
+    el.nnStatusBadge.textContent = '載入中…';
+    el.nnProgressWrap.classList.remove('hidden');
+    el.nnErrorMsg.classList.add('hidden');
+    el.btnNnLoad.disabled = true;
+    el.btnNnFile.disabled = true;
+    el.btnNnUnload.classList.add('hidden');
+
+    if (progress) {
+      if (progress.phase === 'cache') {
+        el.nnProgressText.textContent = '從瀏覽器快取讀取模型…';
+        el.nnProgressPct.textContent = '100%';
+        el.nnProgressFill.style.width = '100%';
+      } else if (progress.phase === 'compile') {
+        el.nnProgressText.textContent = '正在編譯 WebGPU / WASM 運算圖…';
+        el.nnProgressPct.textContent = '100%';
+        el.nnProgressFill.style.width = '100%';
+      } else {
+        const mbStr = progress.loadedMB > 0
+          ? `（${progress.loadedMB.toFixed(1)}${progress.totalMB > 0 ? ` / ${progress.totalMB.toFixed(1)}` : ''} MB）`
+          : '';
+        el.nnProgressText.textContent = `下載並快取模型中${mbStr}…`;
+        const pct = progress.pct >= 0 ? progress.pct : 55;
+        el.nnProgressPct.textContent = progress.pct >= 0 ? `${pct}%` : '下載中';
+        el.nnProgressFill.style.width = `${pct}%`;
+      }
+    }
+  } else if (status === 'ready') {
+    const backendLabel = backend === 'webgpu' ? 'WebGPU GPU 加速' : 'WASM CPU 運行';
+    el.nnStatusBadge.textContent = backendLabel;
+    el.nnProgressWrap.classList.add('hidden');
+    el.nnErrorMsg.classList.add('hidden');
+    el.btnNnLoad.classList.add('hidden');
+    el.btnNnFile.disabled = false;
+    el.btnNnUnload.classList.remove('hidden');
+    el.nnActiveInfo.textContent = `已啟用：${modelName}（${backendLabel}）。AI 對手、教練選點與形勢圖均由神經網路驅動！`;
+    showToast(`已啟用神經網路 AI（${backendLabel}）`);
+  } else if (status === 'error') {
+    el.nnStatusBadge.textContent = '載入失敗';
+    el.nnProgressWrap.classList.add('hidden');
+    el.nnErrorMsg.classList.remove('hidden');
+    el.nnErrorMsg.textContent = `無法載入模型：${lastError || '未知錯誤'}。已自動維持使用內建引擎。`;
+    el.btnNnLoad.classList.remove('hidden');
+    el.btnNnLoad.disabled = false;
+    el.btnNnFile.disabled = false;
+    el.btnNnUnload.classList.add('hidden');
+  }
+}
+
+neuralEngine.subscribe(updateNeuralUI);
+
+el.nnPresetSelect.addEventListener('change', () => {
+  const isCustom = el.nnPresetSelect.value === 'custom';
+  el.nnCustomUrl.classList.toggle('hidden', !isCustom);
+  el.nnErrorMsg.classList.add('hidden');
+});
+
+el.btnNnLoad.addEventListener('click', async () => {
+  const val = el.nnPresetSelect.value;
+  let url = '';
+  let name = '';
+  if (val === 'custom') {
+    url = el.nnCustomUrl.value.trim();
+    if (!url) {
+      el.nnErrorMsg.classList.remove('hidden');
+      el.nnErrorMsg.textContent = '請先輸入有效的 .onnx 模型網址。';
+      return;
+    }
+    name = url.split('/').pop() || '自訂 ONNX 模型';
+  } else {
+    const preset = NN_MODEL_PRESETS.find((p) => p.id === val);
+    if (!preset) return;
+    url = preset.url;
+    name = preset.name;
+  }
+  try {
+    await neuralEngine.loadFromUrl(url, name);
+  } catch {
+    // Error already displayed via subscribe handler
+  }
+});
+
+el.btnNnFile.addEventListener('click', () => {
+  el.inputNnFile.value = '';
+  el.inputNnFile.click();
+});
+
+el.inputNnFile.addEventListener('change', async () => {
+  const file = el.inputNnFile.files?.[0];
+  if (!file) return;
+  try {
+    await neuralEngine.loadFromFile(file);
+  } catch {
+    // Error already displayed via subscribe handler
+  }
+});
+
+el.btnNnUnload.addEventListener('click', () => {
+  neuralEngine.unload();
+  state.latestOwnershipMap = null;
+  renderCurrentBoard();
+  showToast('已切換回內建輕量引擎');
 });
 
 // ============================================================================

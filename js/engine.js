@@ -10,7 +10,7 @@ export function opponent(color) {
   return color === BLACK ? WHITE : BLACK;
 }
 
-const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST'; // 'I' is traditionally skipped in Go
+export const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST'; // 'I' is traditionally skipped in Go
 
 export function coordToLabel(x, y, size) {
   if (x < 0 || y < 0 || x >= size || y >= size) return '虛手';

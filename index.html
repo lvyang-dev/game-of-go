@@ -235,6 +235,50 @@
               <div class="graph-hint">點擊曲線上任意位置即可回顧該手局面</div>
             </div>
           </div>
+
+          <!-- In-Browser Neural Network Engine Card (ONNX Runtime WebGPU / WASM) -->
+          <div class="card nn-card">
+            <div class="card-header">
+              <div>
+                <h3>神經網路 AI 引擎</h3>
+                <span class="card-subtitle">瀏覽器端 ONNX（WebGPU / WASM）</span>
+              </div>
+              <span id="nn-status-badge" class="nn-badge idle">內建引擎</span>
+            </div>
+
+            <div id="nn-controls" class="nn-controls">
+              <select id="nn-preset-select" class="select-input nn-select" aria-label="選擇 ONNX 模型來源">
+                <option value="repo-local">專案內建模型（./models/katago.onnx）</option>
+                <option value="hf-kaya-fp16">KataGo b28c512 FP16（Hugging Face）</option>
+                <option value="custom">自訂 HTTPS 模型網址…</option>
+              </select>
+
+              <input id="nn-custom-url" class="text-input hidden" type="url" placeholder="貼上 .onnx 模型網址（https://…）" />
+
+              <div id="nn-progress-wrap" class="nn-progress-wrap hidden">
+                <div class="nn-progress-meta">
+                  <span id="nn-progress-text">正在下載並快取模型…</span>
+                  <span id="nn-progress-pct">0%</span>
+                </div>
+                <div class="mastery-bar" style="margin-bottom:0">
+                  <div id="nn-progress-fill" class="mastery-fill" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <div id="nn-error-msg" class="nn-error hidden"></div>
+
+              <div class="nn-actions">
+                <button id="btn-nn-load" class="btn btn-accent flex-1">載入神經網路</button>
+                <button id="btn-nn-file" class="btn btn-subtle" title="從本機選擇 .onnx 檔案">本機 .onnx</button>
+                <button id="btn-nn-unload" class="btn btn-subtle hidden">切換回內建</button>
+                <input id="input-nn-file" type="file" accept=".onnx" class="hidden" />
+              </div>
+
+              <div id="nn-active-info" class="muted-text nn-note">
+                初次載入後自動快取於瀏覽器，支援 GitHub Pages 零伺服器部署。
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ===================== PRACTICE DOJO SIDEBAR ===================== -->
@@ -317,7 +361,7 @@
 
         <div class="form-group">
           <label class="form-label">AI 對手棋力</label>
-          <div class="segmented-grid cols-3" data-setting="difficulty">
+          <div class="segmented-grid cols-2" data-setting="difficulty">
             <button class="seg-btn" data-value="relaxed">
               <strong>15 級</strong>
               <span>輕鬆練手</span>
@@ -329,6 +373,10 @@
             <button class="seg-btn" data-value="strong">
               <strong>5 級</strong>
               <span>進階強手</span>
+            </button>
+            <button class="seg-btn" data-value="dan">
+              <strong>段位 NN</strong>
+              <span>神經網路強化</span>
             </button>
           </div>
         </div>

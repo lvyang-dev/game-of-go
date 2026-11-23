@@ -3,9 +3,7 @@
 // Supports 9x9, 13x13, 19x19, Cropped Viewports, Stones & Coaching Overlays
 // ============================================================================
 
-import { EMPTY, BLACK, WHITE, getHoshiPoints } from './engine.js';
-
-const COL_LETTERS = 'ABCDEFGHJKLMNOPQRST';
+import { EMPTY, BLACK, WHITE, COL_LETTERS, getHoshiPoints } from './engine.js';
 
 export class GobanRenderer {
   constructor(canvas) {

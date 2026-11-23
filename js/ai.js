@@ -11,6 +11,7 @@ import {
   estimateInfluence,
   detectMoveFeatures,
 } from './engine.js';
+import { neuralEngine } from './nn-engine.js';
 
 export const DIFFICULTY_PRESETS = {
   relaxed: {
@@ -20,6 +21,7 @@ export const DIFFICULTY_PRESETS = {
     simulations9: 140,
     simulations13: 90,
     simulations19: 55,
+    nnVisits: 1,
     topK: 14,
     noise: 0.16,
     timeBudgetMs: 260,
@@ -31,6 +33,7 @@ export const DIFFICULTY_PRESETS = {
     simulations9: 420,
     simulations13: 240,
     simulations19: 130,
+    nnVisits: 6,
     topK: 18,
     noise: 0.04,
     timeBudgetMs: 480,
@@ -42,9 +45,22 @@ export const DIFFICULTY_PRESETS = {
     simulations9: 850,
     simulations13: 450,
     simulations19: 240,
+    nnVisits: 16,
     topK: 22,
     noise: 0.0,
     timeBudgetMs: 750,
+  },
+  dan: {
+    id: 'dan',
+    label: '段位 · 神經網路',
+    rank: '段位 NN',
+    simulations9: 1200,
+    simulations13: 650,
+    simulations19: 340,
+    nnVisits: 32,
+    topK: 24,
+    noise: 0.0,
+    timeBudgetMs: 1400,
   },
 };
 
@@ -510,14 +526,215 @@ class MCTSNode {
   }
 }
 
+// ============================================================================
+// AlphaZero / KataGo PUCT-MCTS Powered by In-Browser ONNX Neural Network
+// ============================================================================
+
+class PUCTNode {
+  constructor(board, colorToPlay, moveIdx = -1, parent = null, priorProb = 0) {
+    this.board = board;
+    this.colorToPlay = colorToPlay;
+    this.moveIdx = moveIdx;
+    this.parent = parent;
+    this.priorProb = priorProb;
+    this.visits = 0;
+    this.blackValueSum = 0;
+    this.children = null;
+  }
+
+  puctScore(parentVisits, isBlackParent) {
+    const qBlack = this.visits > 0 ? this.blackValueSum / this.visits : 0.5;
+    const q = isBlackParent ? qBlack : (1 - qBlack);
+    const u = 1.45 * this.priorProb * Math.sqrt(parentVisits + 1) / (1 + this.visits);
+    return q + u;
+  }
+}
+
+async function analyzeWithNeuralNetAsync(board, colorToPlay, {
+  komi = 6.5,
+  rules = 'chinese',
+  recentMoves = [],
+  superkoSet = null,
+  difficulty = 'club',
+  customTimeBudgetMs = null,
+} = {}) {
+  const preset = DIFFICULTY_PRESETS[difficulty] || DIFFICULTY_PRESETS.club;
+  const maxVisits = preset.nnVisits || 12;
+  const timeBudget = customTimeBudgetMs ?? Math.max(900, preset.timeBudgetMs);
+  const startTime = performance.now();
+
+  const rootEval = await neuralEngine.evaluate(board, colorToPlay, { komi, rules, recentMoves });
+  if (!rootEval) return null;
+
+  const size = board.size;
+  const total = size * size;
+
+  // Gather legal moves sorted by neural policy probability
+  const legalMoves = [];
+  for (let idx = 0; idx < total; idx++) {
+    if (board.grid[idx] !== EMPTY || idx === board.koPoint) continue;
+    if (!board.isLegalIdx(idx, colorToPlay, superkoSet)) continue;
+    legalMoves.push({ idx, prior: rootEval.policyProbs[idx] || 0 });
+  }
+  legalMoves.sort((a, b) => b.prior - a.prior);
+
+  if (legalMoves.length === 0 || rootEval.passProb > 0.72) {
+    return {
+      passRecommended: true,
+      bestMove: null,
+      topMoves: [],
+      allEvaluated: [],
+      blackWinrate: rootEval.blackWinrate,
+      playerWinrate: rootEval.playerWinrate,
+      scoreLeadBlack: rootEval.scoreLeadBlack,
+      ownershipMap: rootEval.ownershipBlack,
+      simulations: 1,
+      engineUsed: 'onnx',
+    };
+  }
+
+  const root = new PUCTNode(board.clone(), colorToPlay, -1, null, 1.0);
+  root.visits = 1;
+  root.blackValueSum = rootEval.blackWinrate;
+  root.children = [];
+
+  const topLegal = legalMoves.slice(0, Math.min(18, legalMoves.length));
+  for (const m of topLegal) {
+    const nb = board.clone();
+    if (nb.playIdx(m.idx, colorToPlay, superkoSet).legal) {
+      root.children.push(new PUCTNode(nb, opponent(colorToPlay), m.idx, root, m.prior));
+    }
+  }
+
+  let evals = 1;
+  while (evals < maxVisits && (performance.now() - startTime) < timeBudget && root.children.length > 0) {
+    // 1. Selection via PUCT
+    let node = root;
+    while (node.children && node.children.length > 0) {
+      const isBlackTurn = node.colorToPlay === BLACK;
+      let best = node.children[0];
+      let bestScore = -Infinity;
+      for (let i = 0; i < node.children.length; i++) {
+        const s = node.children[i].puctScore(node.visits, isBlackTurn);
+        if (s > bestScore) {
+          bestScore = s;
+          best = node.children[i];
+        }
+      }
+      node = best;
+    }
+
+    // 2. Neural Evaluation & Expansion
+    const ev = await neuralEngine.evaluate(node.board, node.colorToPlay, { komi, rules, recentMoves });
+    if (!ev) break;
+    evals++;
+
+    if (node.visits >= 1 && evals < maxVisits) {
+      const subMoves = [];
+      for (let idx = 0; idx < total; idx++) {
+        if (node.board.grid[idx] !== EMPTY || idx === node.board.koPoint) continue;
+        if (ev.policyProbs[idx] > 0.015 && node.board.isLegalIdx(idx, node.colorToPlay)) {
+          subMoves.push({ idx, prior: ev.policyProbs[idx] });
+        }
+      }
+      subMoves.sort((a, b) => b.prior - a.prior);
+      if (subMoves.length > 0) {
+        node.children = [];
+        for (const sm of subMoves.slice(0, 8)) {
+          const nb = node.board.clone();
+          if (nb.playIdx(sm.idx, node.colorToPlay).legal) {
+            node.children.push(new PUCTNode(nb, opponent(node.colorToPlay), sm.idx, node, sm.prior));
+          }
+        }
+      }
+    }
+
+    // 3. Backpropagation
+    let curr = node;
+    while (curr !== null) {
+      curr.visits += 1;
+      curr.blackValueSum += ev.blackWinrate;
+      curr = curr.parent;
+    }
+
+    if (evals % 3 === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+
+  const isBlack = colorToPlay === BLACK;
+  const scored = root.children.map((ch) => {
+    const blackWr = ch.visits > 0 ? ch.blackValueSum / ch.visits : rootEval.blackWinrate;
+    const playerWr = isBlack ? blackWr : (1 - blackWr);
+    const x = ch.moveIdx % size;
+    const y = Math.floor(ch.moveIdx / size);
+    const evalScore = (ch.visits * 0.05) + ch.priorProb * 1.2 + playerWr * 0.4;
+    return {
+      idx: ch.moveIdx,
+      x,
+      y,
+      coord: coordToLabel(x, y, size),
+      visits: ch.visits,
+      blackWinrate: blackWr,
+      playerWinrate: playerWr,
+      priorScore: ch.priorProb * 100,
+      evalScore,
+      tags: [],
+      reason: buildMoveReason(board, ch.moveIdx, colorToPlay, []),
+    };
+  });
+
+  scored.sort((a, b) => b.evalScore - a.evalScore);
+
+  let selectedMove = scored[0];
+  if (preset.noise > 0 && scored.length > 1) {
+    const pool = scored.slice(0, Math.min(3, scored.length));
+    if (Math.random() < preset.noise * 2.0) {
+      selectedMove = pool[Math.floor(Math.random() * pool.length)];
+    }
+  }
+
+  return {
+    passRecommended: false,
+    bestMove: selectedMove,
+    topMoves: scored.slice(0, 3),
+    allEvaluated: scored,
+    blackWinrate: scored[0]?.blackWinrate ?? rootEval.blackWinrate,
+    playerWinrate: scored[0]?.playerWinrate ?? rootEval.playerWinrate,
+    scoreLeadBlack: rootEval.scoreLeadBlack,
+    ownershipMap: rootEval.ownershipBlack,
+    simulations: evals,
+    engineUsed: 'onnx',
+  };
+}
+
 export async function analyzePositionAsync(board, colorToPlay, {
   komi = 6.5,
+  rules = 'chinese',
+  recentMoves = [],
   lastMoveIdx = -1,
   superkoSet = null,
   difficulty = 'club',
   customSimulations = null,
   customTimeBudgetMs = null,
 } = {}) {
+  // Automatically use In-Browser ONNX Neural Network (WebGPU/WASM) when loaded
+  if (neuralEngine.isReady()) {
+    try {
+      const nnRes = await analyzeWithNeuralNetAsync(board, colorToPlay, {
+        komi,
+        rules,
+        recentMoves,
+        superkoSet,
+        difficulty,
+        customTimeBudgetMs,
+      });
+      if (nnRes) return nnRes;
+    } catch (err) {
+      console.warn('ONNX neural evaluation failed, falling back to heuristic MCTS:', err);
+    }
+  }
+
   const preset = DIFFICULTY_PRESETS[difficulty] || DIFFICULTY_PRESETS.club;
   const maxSims = customSimulations ?? (
     board.size === 9 ? preset.simulations9 :
